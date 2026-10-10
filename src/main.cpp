@@ -1,35 +1,33 @@
-э#include <Geode/Geode.hpp>
+#include <Geode/Geode.hpp>
 #include <Geode/ui/GeodeUI.hpp>
 #include <Geode/modify/PlayLayer.hpp>
 #include <Geode/modify/PlayerObject.hpp>
 #include <Geode/modify/PauseLayer.hpp>
 #include <deque>
 #include <vector>
-#include <algorithm>
 #include <cmath>
-#include <string>
 
 using namespace geode::prelude;
 
 // one recorded click
 struct Ev {
-	int who;     // 0 = player 1, 1 = player 2
-	int mode;    // gamemode id
-	float x;
-	float y;
-	int kind;    // 0 = release, 1 = push
-	bool fired;
+	int who = 0;       // 0 = player 1, 1 = player 2
+	int mode = 0;      // gamemode id
+	float x = 0.f;
+	float y = 0.f;
+	int kind = 1;      // 0 = release, 1 = push
+	bool fired = false;
 };
 
-// the click the bot is currently trying to place before a death spot
+// the click the bot is currently trying before a death spot
 struct Fix {
 	bool active = false;
 	bool flipped = false;
 	bool fired = false;
 	int who = 0;
 	int mode = 0;
-	int kind = 1;        // 0 = release, 1 = push, 2 = tap
-	int k = 1;           // how many steps before the death step
+	int kind = 1;      // 0 = release, 1 = push, 2 = tap
+	int k = 1;         // how many steps before the death step
 	float deathX = 0.f;
 	float baseTrig = 0.f;
 	float vx = 1.f;
@@ -84,7 +82,8 @@ public:
 
 	int whoAmI() {
 		auto pl = PlayLayer::get();
-		return (pl && pl->m_player2 == this) ? 1 : 0;
+		if (pl && pl->m_player2 == this) return 1;
+		return 0;
 	}
 
 	bool assistAllowed() {
@@ -116,7 +115,14 @@ public:
 		if (!this->assistAllowed()) return;
 		if (g_cur.size() > 4000) return;
 		CCPoint p = this->getPosition();
-		g_cur.push_back(Ev{ this->whoAmI(), this->modeId(), p.x, p.y, kind, false });
+		Ev e;
+		e.who = this->whoAmI();
+		e.mode = this->modeId();
+		e.x = p.x;
+		e.y = p.y;
+		e.kind = kind;
+		e.fired = false;
+		g_cur.push_back(e);
 	}
 
 	bool pushButton(PlayerButton b) {
@@ -131,19 +137,22 @@ public:
 		return r;
 	}
 
-	// which click would change the current movement: wave/ship flip, others tap
+	// which click would change the movement: wave/ship flip, others tap
 	int pickKind() {
 		auto f = m_fields.self();
 		int n = static_cast<int>(f->hist.size());
 
-		if (m_isDart && n >= 2) {
-			float dy = f->hist[n - 1].y - f->hist[n - 2].y;
-			if (std::fabs(dy) > 0.001f) {
-				bool holding = (dy > 0.f) != m_isUpsideDown;
-				return holding ? 0 : 1;
+		if (m_isDart) {
+			if (n >= 2) {
+				float dy = f->hist[n - 1].y - f->hist[n - 2].y;
+				if (std::fabs(dy) > 0.001f) {
+					bool holding = (dy > 0.f) != m_isUpsideDown;
+					return holding ? 0 : 1;
+				}
 			}
 			return 1;
 		}
+
 		if (m_isShip) {
 			if (n >= 3) {
 				float dy1 = f->hist[n - 1].y - f->hist[n - 2].y;
@@ -156,6 +165,7 @@ public:
 			}
 			return 1;
 		}
+
 		return 2;
 	}
 
@@ -263,7 +273,9 @@ public:
 			for (auto& e : g_best) {
 				if (e.x < g_startX - 1.f) nb.push_back(e);
 			}
-			for (auto& e : g_cur) nb.push_back(e);
+			for (auto& e : g_cur) {
+				nb.push_back(e);
+			}
 			g_best = nb;
 			g_bestX = deathX;
 			frontier = true;
@@ -309,48 +321,11 @@ public:
 };
 
 class $modify(AssistLayer, PlayLayer) {
-	struct Fields {
-		CCLabelBMFont* label = nullptr;
-		int tick = 0;
-	};
-
 	void destroyPlayer(PlayerObject* player, GameObject* object) {
 		if (player && object != m_anticheatSpike) {
 			static_cast<AssistPlayer*>(player)->learnFromDeath();
 		}
 		PlayLayer::destroyPlayer(player, object);
-	}
-
-	void postUpdate(float dt) {
-		PlayLayer::postUpdate(dt);
-
-		auto mod = Mod::get();
-		auto f = m_fields.self();
-		bool show = mod->getSettingValue<bool>("assist-enabled") &&
-			mod->getSettingValue<bool>("show-hud");
-
-		if (!f->label) {
-			if (!show || !m_uiLayer) return;
-			f->label = CCLabelBMFont::create("", "bigFont.fnt");
-			f->label->setScale(0.3f);
-			f->label->setAnchorPoint({ 0.f, 1.f });
-			auto win = CCDirector::get()->getWinSize();
-			f->label->setPosition({ 6.f, win.height - 6.f });
-			m_uiLayer->addChild(f->label, 100);
-		}
-
-		f->label->setVisible(show);
-		if (!show) return;
-
-		f->tick++;
-		if (f->tick % 10 != 0) return;
-
-		std::string t = "AI best x: " + std::to_string(static_cast<int>(g_bestX)) +
-			" | clicks: " + std::to_string(g_best.size());
-		if (g_fix.active) {
-			t += " | trying " + std::to_string(g_fix.k) + " steps early";
-		}
-		f->label->setString(t.c_str());
 	}
 };
 
