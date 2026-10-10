@@ -6,7 +6,7 @@
 		"mac": "2.2081",
 		"ios": "2.2081"
 	},
-	"version": "v2.0.0",
+	"version": "v2.0.1",
 	"id": "fullydraco.waveassist",
 	"name": "Wave Assist",
 	"developer": "fullydraco",
@@ -31,12 +31,6 @@
 			"default": 150,
 			"min": 10,
 			"max": 600
-		},
-		"show-hud": {
-			"type": "bool",
-			"name": "Show status",
-			"description": "Show the learning status in the top left corner.",
-			"default": true
 		},
 		"practice-only": {
 			"type": "bool",
