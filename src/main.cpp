@@ -1,80 +1,62 @@
-#include <Geode/Geode.hpp>
+э#include <Geode/Geode.hpp>
 #include <Geode/ui/GeodeUI.hpp>
 #include <Geode/modify/PlayLayer.hpp>
 #include <Geode/modify/PlayerObject.hpp>
 #include <Geode/modify/PauseLayer.hpp>
 #include <deque>
 #include <vector>
-#include <utility>
 #include <algorithm>
 #include <cmath>
-#include <cstdlib>
+#include <string>
 
 using namespace geode::prelude;
 
-// one recorded click (by the user)
-struct UserEv {
+// one recorded click
+struct Ev {
 	int who;     // 0 = player 1, 1 = player 2
 	int mode;    // gamemode id
 	float x;
 	float y;
-	int kind;    // 0 = release, 1 = push, 2 = tap
-};
-
-// a spot where the assist had to rescue the player
-struct Spot {
-	int who;
-	int mode;
-	float x;
-	float y;
-	int kind;
-	float offset;      // how many units earlier to click here
-	int tries;         // how many times it failed here
-	bool solved;
+	int kind;    // 0 = release, 1 = push
 	bool fired;
-	bool hasSol;       // user's own clicks recorded for this spot
-	std::vector<UserEv> sol;
-	std::vector<char> solFired;
 };
 
-static std::vector<Spot> g_spots;
-static std::vector<UserEv> g_user;
-static std::vector<CCRect> g_hazards;
-static PlayLayer* g_layer = nullptr;
-static bool g_assistClick = false;
+// the click the bot is currently trying to place before a death spot
+struct Fix {
+	bool active = false;
+	bool flipped = false;
+	bool fired = false;
+	int who = 0;
+	int mode = 0;
+	int kind = 1;        // 0 = release, 1 = push, 2 = tap
+	int k = 1;           // how many steps before the death step
+	float deathX = 0.f;
+	float baseTrig = 0.f;
+	float vx = 1.f;
+};
+
+static std::vector<Ev> g_best;   // clicks of the best run so far
+static std::vector<Ev> g_cur;    // clicks of the current attempt
+static Fix g_fix;
+static float g_bestX = 0.f;      // how far the best run got
+static float g_startX = 0.f;     // where the current attempt started
+static bool g_newAttempt = true;
 static int g_deathGuard = 0;
+static PlayLayer* g_layer = nullptr;
 
-// 0 tries = base, then alternates earlier / later: +6, -6, +12, -12 ...
-static float offsetFor(int tries, float base) {
-	if (tries <= 0) return base;
-	int k = (tries + 1) / 2;
-	float sign = (tries % 2 == 1) ? 1.f : -1.f;
-	float v = base + sign * 6.f * static_cast<float>(k);
-	return std::max(-30.f, std::min(90.f, v));
-}
-
-static void rebuildHazards(float x) {
-	g_hazards.clear();
-	auto pl = PlayLayer::get();
-	if (!pl || !pl->m_objects) return;
-	for (auto obj : CCArrayExt<GameObject*>(pl->m_objects)) {
-		if (!obj) continue;
-		if (obj->m_objectType != GameObjectType::Hazard) continue;
-		CCRect r = obj->getObjectRect();
-		if (r.origin.x + r.size.width < x - 20.f || r.origin.x > x + 600.f) continue;
-		g_hazards.push_back(r);
-	}
+static void resetLearning() {
+	g_best.clear();
+	g_cur.clear();
+	g_fix = Fix();
+	g_bestX = 0.f;
+	g_newAttempt = true;
 }
 
 class $modify(AssistPlayer, PlayerObject) {
 public:
 	struct Fields {
 		std::deque<CCPoint> hist;
-		int stuck = 0;
-		float stuckX = 0.f;
 		int releaseIn = 0;
-		int cooldown = 0;
-		int hazAge = 0;
 	};
 
 	bool modeEnabled() {
@@ -116,10 +98,9 @@ public:
 		return true;
 	}
 
-	// clicks made by the assist itself (not recorded as user clicks)
+	// press / release / tap
 	void fireClick(int kind) {
 		auto f = m_fields.self();
-		g_assistClick = true;
 		if (kind == 0) {
 			this->releaseButton(static_cast<PlayerButton>(1));
 		} else if (kind == 1) {
@@ -128,94 +109,54 @@ public:
 			this->pushButton(static_cast<PlayerButton>(1));
 			f->releaseIn = m_isRobot ? 8 : 2;
 		}
-		g_assistClick = false;
 	}
 
-	// remember the user's own clicks
-	void noteUserClick(int kind) {
-		if (g_assistClick) return;
+	// every click (yours and the bot's) is recorded for the current attempt
+	void recordClick(int kind) {
 		if (!this->assistAllowed()) return;
-		if (!Mod::get()->getSettingValue<bool>("assist-learn")) return;
-		if (g_user.size() > 400) g_user.erase(g_user.begin());
+		if (g_cur.size() > 4000) return;
 		CCPoint p = this->getPosition();
-		g_user.push_back(UserEv{ this->whoAmI(), this->modeId(), p.x, p.y, kind });
+		g_cur.push_back(Ev{ this->whoAmI(), this->modeId(), p.x, p.y, kind, false });
 	}
 
 	bool pushButton(PlayerButton b) {
 		bool r = PlayerObject::pushButton(b);
-		if (static_cast<int>(b) == 1) this->noteUserClick(1);
+		if (static_cast<int>(b) == 1) this->recordClick(1);
 		return r;
 	}
 
 	bool releaseButton(PlayerButton b) {
 		bool r = PlayerObject::releaseButton(b);
-		if (static_cast<int>(b) == 1) this->noteUserClick(0);
+		if (static_cast<int>(b) == 1) this->recordClick(0);
 		return r;
 	}
 
-	bool pathHits(const CCPoint& p, float vx, float vy, int steps, float half) {
-		for (int k = 2; k <= steps; k += 2) {
-			float px = p.x + vx * static_cast<float>(k);
-			float py = p.y + vy * static_cast<float>(k);
-			for (auto& r : g_hazards) {
-				if (px + half > r.origin.x && px - half < r.origin.x + r.size.width &&
-					py + half > r.origin.y && py - half < r.origin.y + r.size.height) {
-					return true;
+	// which click would change the current movement: wave/ship flip, others tap
+	int pickKind() {
+		auto f = m_fields.self();
+		int n = static_cast<int>(f->hist.size());
+
+		if (m_isDart && n >= 2) {
+			float dy = f->hist[n - 1].y - f->hist[n - 2].y;
+			if (std::fabs(dy) > 0.001f) {
+				bool holding = (dy > 0.f) != m_isUpsideDown;
+				return holding ? 0 : 1;
+			}
+			return 1;
+		}
+		if (m_isShip) {
+			if (n >= 3) {
+				float dy1 = f->hist[n - 1].y - f->hist[n - 2].y;
+				float dy2 = f->hist[n - 2].y - f->hist[n - 3].y;
+				float ddy = dy1 - dy2;
+				if (std::fabs(ddy) > 0.0001f) {
+					bool holding = (ddy > 0.f) != m_isUpsideDown;
+					return holding ? 0 : 1;
 				}
 			}
+			return 1;
 		}
-		return false;
-	}
-
-	// look ahead for spikes / saws and click before reaching them
-	void lookahead(const CCPoint& pos) {
-		auto mod = Mod::get();
-		if (!mod->getSettingValue<bool>("assist-lookahead")) return;
-
-		auto f = m_fields.self();
-		if (f->cooldown > 0) {
-			f->cooldown--;
-			return;
-		}
-
-		int n = static_cast<int>(f->hist.size());
-		if (n < 3) return;
-
-		float vx = f->hist[n - 1].x - f->hist[n - 2].x;
-		float vy = f->hist[n - 1].y - f->hist[n - 2].y;
-		if (vx < 0.01f) return;
-
-		f->hazAge--;
-		if (f->hazAge <= 0) {
-			rebuildHazards(pos.x);
-			f->hazAge = 16;
-		}
-		if (g_hazards.empty()) return;
-
-		float look = static_cast<float>(mod->getSettingValue<double>("lookahead-distance"));
-		int steps = std::min(200, static_cast<int>(std::ceil(look / vx)));
-		float half = (m_isDart ? 5.f : 9.f) * std::max(0.5f, this->getScale());
-
-		if (m_isDart) {
-			if (std::fabs(vy) < 0.001f) return;
-			if (this->pathHits(pos, vx, vy, steps, half) &&
-				!this->pathHits(pos, vx, -vy, steps, half)) {
-				bool wasHolding = (vy > 0.f) != m_isUpsideDown;
-				this->fireClick(wasHolding ? 0 : 1);
-				f->cooldown = 8;
-			}
-			return;
-		}
-
-		if (m_isShip || m_isSwing) return;
-
-		bool needGround = !m_isBird;
-		if (needGround && !m_isOnGround) return;
-
-		if (this->pathHits(pos, vx, needGround ? 0.f : vy, steps, half)) {
-			this->fireClick(2);
-			f->cooldown = 15;
-		}
+		return 2;
 	}
 
 	void update(float dt) {
@@ -223,239 +164,193 @@ public:
 
 		auto f = m_fields.self();
 		CCPoint pos = this->getPosition();
-		auto mod = Mod::get();
 
-		// new level / new PlayLayer: forget everything
+		// new level: forget everything
 		auto pl = PlayLayer::get();
 		if (pl != g_layer) {
 			g_layer = pl;
-			g_spots.clear();
-			g_user.clear();
-			g_hazards.clear();
+			resetLearning();
+			f->hist.clear();
 		}
 
 		if (g_deathGuard > 0) g_deathGuard--;
 
-		// respawn / big jump back: forget old history
-		if (!f->hist.empty() && pos.x < f->hist.back().x - 300.f) {
+		// respawn / restart: a new attempt begins
+		if (!f->hist.empty() && pos.x < f->hist.back().x - 100.f) {
 			f->hist.clear();
-			f->stuck = 0;
 			f->releaseIn = 0;
+			g_cur.clear();
+			g_newAttempt = true;
+		}
+
+		if (g_newAttempt) {
+			g_startX = pos.x;
+			g_newAttempt = false;
 		}
 
 		f->hist.push_back(pos);
 		if (f->hist.size() > 64) f->hist.pop_front();
 
-		// moved far enough past the trap point: reset the stuck counter
-		if (f->stuck > 0 && pos.x > f->stuckX + 60.f) f->stuck = 0;
-
 		// finish a tap click
 		if (f->releaseIn > 0) {
 			f->releaseIn--;
 			if (f->releaseIn == 0) {
-				g_assistClick = true;
 				this->releaseButton(static_cast<PlayerButton>(1));
-				g_assistClick = false;
 			}
 		}
 
 		if (!this->assistAllowed()) return;
 
-		// keep only the user's clicks that are behind the player in this attempt
-		g_user.erase(
-			std::remove_if(g_user.begin(), g_user.end(), [&](const UserEv& e) {
-				return e.x < pos.x - 400.f || e.x > pos.x + 50.f;
-			}),
-			g_user.end()
-		);
-
-		if (mod->getSettingValue<bool>("assist-learn")) {
-			float margin = static_cast<float>(mod->getSettingValue<double>("learn-margin"));
-			int who = this->whoAmI();
-			int mode = this->modeId();
-
-			for (auto& s : g_spots) {
-				if (s.who != who || s.mode != mode) continue;
-
-				// behind the spot again: allow re-checking it
-				if (pos.x < s.x - 150.f) s.solved = false;
-
-				// passed the spot alive: remember the user's clicks around it
-				if (pos.x > s.x + 100.f && !s.solved) {
-					s.solved = true;
-					if (!s.hasSol) {
-						std::vector<UserEv> sol;
-						for (auto& e : g_user) {
-							if (e.who == who && e.mode == mode &&
-								e.x >= s.x - 80.f && e.x <= s.x + 80.f) {
-								sol.push_back(e);
-							}
-						}
-						if (!sol.empty()) {
-							s.sol = sol;
-							s.solFired.assign(sol.size(), 1);
-							s.hasSol = true;
-						}
-					}
-				}
-
-				if (!s.hasSol) {
-					// the assist's own click, with the adaptive offset
-					float fx = s.x - s.offset;
-					if (s.fired && pos.x < fx - 5.f) s.fired = false;
-					if (!s.fired && pos.x >= fx && pos.x <= fx + 40.f &&
-						std::fabs(pos.y - s.y) < 35.f + std::fabs(s.offset)) {
-						this->fireClick(s.kind);
-						s.fired = true;
-					}
-				} else {
-					// replay the user's own clicks
-					float shift = s.offset - margin;
-					for (size_t i = 0; i < s.sol.size(); i++) {
-						float tx = s.sol[i].x - shift;
-						if (s.solFired[i] && pos.x < tx - 5.f) s.solFired[i] = 0;
-						if (!s.solFired[i] && pos.x >= tx && pos.x <= tx + 40.f &&
-							std::fabs(pos.y - s.sol[i].y) < 35.f + std::fabs(shift)) {
-							this->fireClick(s.sol[i].kind);
-							s.solFired[i] = 1;
-						}
-					}
-				}
-			}
-		}
-
-		this->lookahead(pos);
-	}
-
-	bool tryRescue() {
 		auto mod = Mod::get();
-		if (!this->assistAllowed()) return false;
-
-		float miss = static_cast<float>(mod->getSettingValue<double>("miss-chance"));
-		if (miss > 0.f && (std::rand() % 10000) / 100.f < miss) return false;
-
-		auto f = m_fields.self();
-
-		// too many rescues without moving forward = trapped, let it die
-		int maxStuck = static_cast<int>(mod->getSettingValue<int64_t>("max-rescues"));
-		if (maxStuck > 0 && f->stuck >= maxStuck) return false;
-
-		int steps = 1;
-		if (mod->getSettingValue<std::string>("assist-method") == "Rewind") {
-			steps = static_cast<int>(mod->getSettingValue<int64_t>("rewind-steps"));
-		}
-
-		int n = static_cast<int>(f->hist.size());
-		if (n < 2) return false;
-
-		bool flipMode = m_isDart || m_isShip;
-		bool wasHolding = false;
-
-		if (m_isDart) {
-			float dy = f->hist[n - 1].y - f->hist[n - 2].y;
-			if (std::fabs(dy) < 0.001f) return false;
-			wasHolding = (dy > 0.f) != m_isUpsideDown;
-		} else if (m_isShip) {
-			if (n < 3) return false;
-			float dy1 = f->hist[n - 1].y - f->hist[n - 2].y;
-			float dy2 = f->hist[n - 2].y - f->hist[n - 3].y;
-			float ddy = dy1 - dy2;
-			if (std::fabs(ddy) < 0.0001f) return false;
-			wasHolding = (ddy > 0.f) != m_isUpsideDown;
-		}
-
-		if (f->stuck == 0) f->stuckX = f->hist[n - 1].x;
-		f->stuck++;
-
-		int back = std::min(steps, n - 1);
-		CCPoint target = f->hist[n - 1 - back];
-		f->hist.resize(n - back);
-
-		this->setPosition(target);
-
-		int kind = flipMode ? (wasHolding ? 0 : 1) : 2;
-		this->fireClick(kind);
-
-		// remember this spot, or adapt it if we were already here
-		if (mod->getSettingValue<bool>("assist-learn")) {
-			float margin = static_cast<float>(mod->getSettingValue<double>("learn-margin"));
-			int who = this->whoAmI();
-			int mode = this->modeId();
-
-			Spot* nearSpot = nullptr;
-			for (auto& s : g_spots) {
-				if (s.who == who && s.mode == mode && std::fabs(s.x - target.x) < 40.f) {
-					nearSpot = &s;
-					break;
-				}
-			}
-
-			if (nearSpot) {
-				nearSpot->tries++;
-				nearSpot->offset = offsetFor(nearSpot->tries, margin);
-				nearSpot->hasSol = false;
-				nearSpot->sol.clear();
-				nearSpot->solFired.clear();
-				nearSpot->solved = false;
-				nearSpot->fired = true;
-			} else if (g_spots.size() < 300) {
-				Spot s;
-				s.who = who;
-				s.mode = mode;
-				s.x = target.x;
-				s.y = target.y;
-				s.kind = kind;
-				s.offset = margin;
-				s.tries = 0;
-				s.solved = false;
-				s.fired = true;
-				s.hasSol = false;
-				g_spots.push_back(s);
-			}
-		}
-
-		return true;
-	}
-
-	// the player is really going to die: change the timing of nearby spots
-	void onRealDeath() {
-		if (g_deathGuard > 0) return;
-		if (!this->assistAllowed()) return;
-
-		auto mod = Mod::get();
-		if (!mod->getSettingValue<bool>("assist-learn")) return;
-
-		g_deathGuard = 40;
-
-		float margin = static_cast<float>(mod->getSettingValue<double>("learn-margin"));
-		float dx = this->getPositionX();
 		int who = this->whoAmI();
 		int mode = this->modeId();
 
-		for (auto& s : g_spots) {
-			if (s.who != who || s.mode != mode) continue;
-			if (dx >= s.x - 120.f && dx <= s.x + 120.f) {
-				s.tries++;
-				s.offset = offsetFor(s.tries, margin);
-				s.hasSol = false;
-				s.sol.clear();
-				s.solFired.clear();
-				s.solved = false;
+		// replay the clicks of the best run
+		if (mod->getSettingValue<bool>("assist-replay")) {
+			for (auto& e : g_best) {
+				if (e.who != who || e.mode != mode) continue;
+
+				if (e.fired && pos.x < e.x - 5.f) e.fired = false;
+
+				if (!e.fired && pos.x >= e.x - 0.05f && pos.x <= e.x + 40.f &&
+					std::fabs(pos.y - e.y) < 60.f) {
+					this->fireClick(e.kind);
+					e.fired = true;
+				}
 			}
 		}
+
+		// the click the bot is trying before the last death spot
+		if (g_fix.active && g_fix.who == who && g_fix.mode == mode) {
+			float trig = g_fix.baseTrig - static_cast<float>(g_fix.k - 1) * g_fix.vx;
+
+			if (g_fix.fired && pos.x < trig - 5.f) g_fix.fired = false;
+
+			if (!g_fix.fired && pos.x >= trig - 0.05f && pos.x <= trig + 40.f) {
+				this->fireClick(g_fix.kind);
+				g_fix.fired = true;
+			}
+
+			// passed the death spot alive: the click worked
+			if (pos.x > g_fix.deathX + 60.f) g_fix.active = false;
+		}
+	}
+
+	// called when the player is really about to die
+	void learnFromDeath() {
+		if (g_deathGuard > 0) return;
+		if (!this->assistAllowed()) return;
+		g_deathGuard = 60;
+
+		auto mod = Mod::get();
+		auto f = m_fields.self();
+		int n = static_cast<int>(f->hist.size());
+
+		if (n < 3) {
+			g_cur.clear();
+			g_newAttempt = true;
+			return;
+		}
+
+		float deathX = f->hist[n - 1].x;
+		float vx = f->hist[n - 1].x - f->hist[n - 2].x;
+		if (vx < 0.01f) vx = 0.5f;
+
+		// this attempt got further than any before: it becomes the best run
+		bool frontier = false;
+		if (deathX > g_bestX + 5.f) {
+			std::vector<Ev> nb;
+			for (auto& e : g_best) {
+				if (e.x < g_startX - 1.f) nb.push_back(e);
+			}
+			for (auto& e : g_cur) nb.push_back(e);
+			g_best = nb;
+			g_bestX = deathX;
+			frontier = true;
+		}
+
+		int who = this->whoAmI();
+		int mode = this->modeId();
+		int maxBack = static_cast<int>(mod->getSettingValue<int64_t>("max-back-steps"));
+
+		bool retry = g_fix.active && g_fix.who == who && g_fix.mode == mode &&
+			deathX <= g_fix.deathX + 15.f && deathX >= g_fix.deathX - 120.f;
+
+		if (retry) {
+			// died at the same spot again: click one step earlier
+			g_fix.k++;
+			g_fix.fired = false;
+			if (g_fix.k > maxBack) {
+				if (!g_fix.flipped && g_fix.kind != 2) {
+					g_fix.kind = 1 - g_fix.kind;
+					g_fix.flipped = true;
+					g_fix.k = 1;
+				} else {
+					g_fix.active = false;
+				}
+			}
+		} else if (frontier) {
+			// died further than ever: start with a click on the last step
+			g_fix.active = true;
+			g_fix.flipped = false;
+			g_fix.fired = false;
+			g_fix.who = who;
+			g_fix.mode = mode;
+			g_fix.kind = this->pickKind();
+			g_fix.k = 1;
+			g_fix.deathX = deathX;
+			g_fix.baseTrig = f->hist[n - 2].x;
+			g_fix.vx = vx;
+		}
+
+		g_cur.clear();
+		g_newAttempt = true;
 	}
 };
 
 class $modify(AssistLayer, PlayLayer) {
+	struct Fields {
+		CCLabelBMFont* label = nullptr;
+		int tick = 0;
+	};
+
 	void destroyPlayer(PlayerObject* player, GameObject* object) {
 		if (player && object != m_anticheatSpike) {
-			auto ap = static_cast<AssistPlayer*>(player);
-			if (ap->tryRescue()) {
-				return; // cancel the death
-			}
-			ap->onRealDeath();
+			static_cast<AssistPlayer*>(player)->learnFromDeath();
 		}
 		PlayLayer::destroyPlayer(player, object);
+	}
+
+	void postUpdate(float dt) {
+		PlayLayer::postUpdate(dt);
+
+		auto mod = Mod::get();
+		auto f = m_fields.self();
+		bool show = mod->getSettingValue<bool>("assist-enabled") &&
+			mod->getSettingValue<bool>("show-hud");
+
+		if (!f->label) {
+			if (!show || !m_uiLayer) return;
+			f->label = CCLabelBMFont::create("", "bigFont.fnt");
+			f->label->setScale(0.3f);
+			f->label->setAnchorPoint({ 0.f, 1.f });
+			auto win = CCDirector::get()->getWinSize();
+			f->label->setPosition({ 6.f, win.height - 6.f });
+			m_uiLayer->addChild(f->label, 100);
+		}
+
+		f->label->setVisible(show);
+		if (!show) return;
+
+		f->tick++;
+		if (f->tick % 10 != 0) return;
+
+		std::string t = "AI best x: " + std::to_string(static_cast<int>(g_bestX)) +
+			" | clicks: " + std::to_string(g_best.size());
+		if (g_fix.active) {
+			t += " | trying " + std::to_string(g_fix.k) + " steps early";
+		}
+		f->label->setString(t.c_str());
 	}
 };
 
@@ -463,15 +358,22 @@ class $modify(AssistPause, PauseLayer) {
 	void customSetup() {
 		PauseLayer::customSetup();
 
-		auto spr = ButtonSprite::create("Assist");
-		spr->setScale(0.7f);
-
-		auto btn = CCMenuItemSpriteExtra::create(
-			spr, this, menu_selector(AssistPause::onAssist)
+		auto spr1 = ButtonSprite::create("Assist");
+		spr1->setScale(0.7f);
+		auto btn1 = CCMenuItemSpriteExtra::create(
+			spr1, this, menu_selector(AssistPause::onAssist)
 		);
 
+		auto spr2 = ButtonSprite::create("Reset AI");
+		spr2->setScale(0.7f);
+		auto btn2 = CCMenuItemSpriteExtra::create(
+			spr2, this, menu_selector(AssistPause::onReset)
+		);
+		btn2->setPosition({ 0.f, -28.f });
+
 		auto menu = CCMenu::create();
-		menu->addChild(btn);
+		menu->addChild(btn1);
+		menu->addChild(btn2);
 
 		auto win = CCDirector::get()->getWinSize();
 		menu->setPosition({ win.width - 60.f, win.height - 30.f });
@@ -480,5 +382,9 @@ class $modify(AssistPause, PauseLayer) {
 
 	void onAssist(CCObject*) {
 		openSettingsPopup(Mod::get());
+	}
+
+	void onReset(CCObject*) {
+		resetLearning();
 	}
 };
