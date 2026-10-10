@@ -6,22 +6,22 @@
 		"mac": "2.2081",
 		"ios": "2.2081"
 	},
-	"version": "v1.0.0",
+	"version": "v1.2.0",
 	"id": "fullydraco.waveassist",
 	"name": "Wave Assist",
 	"developer": "fullydraco",
-	"description": "Wave assist: rescues the wave on the last frame before death, with an Assist button in the pause menu.",
+	"description": "Assist: rescues the player on the last frame before death in every gamemode, with an Assist button in the pause menu.",
 	"settings": {
 		"assist-enabled": {
 			"type": "bool",
 			"name": "Enable Assist",
-			"description": "Turn the wave assist on or off.",
+			"description": "Turn the assist on or off.",
 			"default": false
 		},
 		"assist-method": {
 			"type": "string",
 			"name": "Method",
-			"description": "Rescue = step back 1 step and flip the click. Rewind = step back several steps and flip.",
+			"description": "Rescue = step back 1 step and click. Rewind = step back several steps and click.",
 			"default": "Rescue",
 			"one-of": ["Rescue", "Rewind"]
 		},
@@ -35,8 +35,8 @@
 		},
 		"max-rescues": {
 			"type": "int",
-			"name": "Max rescues in a row",
-			"description": "After this many rescues in a row the wave is allowed to die. 0 = unlimited.",
+			"name": "Max rescues without progress",
+			"description": "After this many rescues without moving forward the player is allowed to die. 0 = unlimited.",
 			"default": 6,
 			"min": 0,
 			"max": 100
@@ -54,6 +54,58 @@
 			"name": "Only in practice mode",
 			"description": "Use the assist only in practice mode.",
 			"default": false
+		},
+		"gamemodes-title": {
+			"type": "title",
+			"name": "Gamemodes"
+		},
+		"assist-cube": {
+			"type": "bool",
+			"name": "Cube",
+			"description": "Assist in cube (including mini cube).",
+			"default": true
+		},
+		"assist-ship": {
+			"type": "bool",
+			"name": "Ship",
+			"description": "Assist in ship.",
+			"default": true
+		},
+		"assist-ufo": {
+			"type": "bool",
+			"name": "UFO",
+			"description": "Assist in UFO.",
+			"default": true
+		},
+		"assist-ball": {
+			"type": "bool",
+			"name": "Ball",
+			"description": "Assist in ball.",
+			"default": true
+		},
+		"assist-wave": {
+			"type": "bool",
+			"name": "Wave",
+			"description": "Assist in wave.",
+			"default": true
+		},
+		"assist-robot": {
+			"type": "bool",
+			"name": "Robot",
+			"description": "Assist in robot.",
+			"default": true
+		},
+		"assist-spider": {
+			"type": "bool",
+			"name": "Spider",
+			"description": "Assist in spider.",
+			"default": true
+		},
+		"assist-swing": {
+			"type": "bool",
+			"name": "Swing",
+			"description": "Assist in swing.",
+			"default": true
 		}
 	}
 }
