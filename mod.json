@@ -1,0 +1,59 @@
+{
+	"geode": "5.11.1",
+	"gd": {
+		"win": "2.2081",
+		"android": "2.2081",
+		"mac": "2.2081",
+		"ios": "2.2081"
+	},
+	"version": "v1.0.0",
+	"id": "fullydraco.waveassist",
+	"name": "Wave Assist",
+	"developer": "fullydraco",
+	"description": "Wave assist: rescues the wave on the last frame before death, with an Assist button in the pause menu.",
+	"settings": {
+		"assist-enabled": {
+			"type": "bool",
+			"name": "Enable Assist",
+			"description": "Turn the wave assist on or off.",
+			"default": false
+		},
+		"assist-method": {
+			"type": "string",
+			"name": "Method",
+			"description": "Rescue = step back 1 step and flip the click. Rewind = step back several steps and flip.",
+			"default": "Rescue",
+			"one-of": ["Rescue", "Rewind"]
+		},
+		"rewind-steps": {
+			"type": "int",
+			"name": "Rewind Steps",
+			"description": "How many physics steps to go back in Rewind method.",
+			"default": 4,
+			"min": 1,
+			"max": 30
+		},
+		"max-rescues": {
+			"type": "int",
+			"name": "Max rescues in a row",
+			"description": "After this many rescues in a row the wave is allowed to die. 0 = unlimited.",
+			"default": 6,
+			"min": 0,
+			"max": 100
+		},
+		"miss-chance": {
+			"type": "float",
+			"name": "Miss chance (%)",
+			"description": "Chance that the assist does not save you, to look more human.",
+			"default": 0,
+			"min": 0,
+			"max": 100
+		},
+		"practice-only": {
+			"type": "bool",
+			"name": "Only in practice mode",
+			"description": "Use the assist only in practice mode.",
+			"default": false
+		}
+	}
+}
