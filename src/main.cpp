@@ -4,10 +4,24 @@
 #include <Geode/modify/PlayerObject.hpp>
 #include <Geode/modify/PauseLayer.hpp>
 #include <deque>
+#include <vector>
 #include <cmath>
 #include <cstdlib>
 
 using namespace geode::prelude;
+
+// a click the assist learned: where it was needed and what to press
+struct LearnedClick {
+	int who;     // 0 = player 1, 1 = player 2
+	int mode;    // gamemode id
+	float x;
+	float y;
+	int kind;    // 0 = release, 1 = push, 2 = tap
+	bool fired;
+};
+
+static std::vector<LearnedClick> g_clicks;
+static PlayLayer* g_layer = nullptr;
 
 class $modify(AssistPlayer, PlayerObject) {
 public:
@@ -30,11 +44,57 @@ public:
 		return mod->getSettingValue<bool>("assist-cube");
 	}
 
+	int modeId() {
+		if (m_isShip)   return 1;
+		if (m_isBird)   return 2;
+		if (m_isBall)   return 3;
+		if (m_isDart)   return 4;
+		if (m_isRobot)  return 5;
+		if (m_isSpider) return 6;
+		if (m_isSwing)  return 7;
+		return 0;
+	}
+
+	int whoAmI() {
+		auto pl = PlayLayer::get();
+		return (pl && pl->m_player2 == this) ? 1 : 0;
+	}
+
+	bool assistAllowed() {
+		auto mod = Mod::get();
+		if (!mod->getSettingValue<bool>("assist-enabled")) return false;
+		if (!this->modeEnabled()) return false;
+		if (mod->getSettingValue<bool>("practice-only")) {
+			auto pl = PlayLayer::get();
+			if (!pl || !pl->m_isPracticeMode) return false;
+		}
+		return true;
+	}
+
+	void fireClick(int kind) {
+		auto f = m_fields.self();
+		if (kind == 0) {
+			this->releaseButton(static_cast<PlayerButton>(1));
+		} else if (kind == 1) {
+			this->pushButton(static_cast<PlayerButton>(1));
+		} else {
+			this->pushButton(static_cast<PlayerButton>(1));
+			f->releaseIn = m_isRobot ? 8 : 2;
+		}
+	}
+
 	void update(float dt) {
 		PlayerObject::update(dt);
 
 		auto f = m_fields.self();
 		CCPoint pos = this->getPosition();
+
+		// new level / new PlayLayer: forget learned clicks
+		auto pl = PlayLayer::get();
+		if (pl != g_layer) {
+			g_layer = pl;
+			g_clicks.clear();
+		}
 
 		// respawn / big jump back: forget old history
 		if (!f->hist.empty() && pos.x < f->hist.back().x - 300.f) {
@@ -56,17 +116,34 @@ public:
 				this->releaseButton(static_cast<PlayerButton>(1));
 			}
 		}
+
+		// replay learned clicks a bit earlier than the rescue point
+		auto mod = Mod::get();
+		if (this->assistAllowed() && mod->getSettingValue<bool>("assist-learn")) {
+			float margin = static_cast<float>(mod->getSettingValue<double>("learn-margin"));
+			int who = this->whoAmI();
+			int mode = this->modeId();
+			for (auto& c : g_clicks) {
+				if (c.who != who || c.mode != mode) continue;
+
+				if (c.fired) {
+					// player is behind the spot again (respawn): arm it again
+					if (c.x > pos.x + 50.f) c.fired = false;
+					continue;
+				}
+
+				if (pos.x >= c.x - margin && pos.x <= c.x + 40.f &&
+					std::fabs(pos.y - c.y) < 25.f + margin) {
+					this->fireClick(c.kind);
+					c.fired = true;
+				}
+			}
+		}
 	}
 
 	bool tryRescue() {
 		auto mod = Mod::get();
-		if (!mod->getSettingValue<bool>("assist-enabled")) return false;
-		if (!this->modeEnabled()) return false;
-
-		if (mod->getSettingValue<bool>("practice-only")) {
-			auto pl = PlayLayer::get();
-			if (!pl || !pl->m_isPracticeMode) return false;
-		}
+		if (!this->assistAllowed()) return false;
 
 		float miss = static_cast<float>(mod->getSettingValue<double>("miss-chance"));
 		if (miss > 0.f && (std::rand() % 10000) / 100.f < miss) return false;
@@ -111,16 +188,24 @@ public:
 
 		this->setPosition(target);
 
-		if (flipMode) {
-			if (wasHolding) {
-				this->releaseButton(static_cast<PlayerButton>(1));
-			} else {
-				this->pushButton(static_cast<PlayerButton>(1));
+		int kind = flipMode ? (wasHolding ? 0 : 1) : 2;
+		this->fireClick(kind);
+
+		// remember this spot so the next attempt clicks here earlier
+		if (mod->getSettingValue<bool>("assist-learn") && g_clicks.size() < 500) {
+			int who = this->whoAmI();
+			int mode = this->modeId();
+			bool dup = false;
+			for (auto& c : g_clicks) {
+				if (c.who == who && c.mode == mode && c.kind == kind &&
+					std::fabs(c.x - target.x) < 3.f) {
+					dup = true;
+					break;
+				}
 			}
-		} else {
-			// cube, ball, ufo, spider, swing, robot: one click
-			this->pushButton(static_cast<PlayerButton>(1));
-			f->releaseIn = m_isRobot ? 8 : 2;
+			if (!dup) {
+				g_clicks.push_back(LearnedClick{ who, mode, target.x, target.y, kind, true });
+			}
 		}
 
 		return true;
