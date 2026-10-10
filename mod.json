@@ -6,81 +6,42 @@
 		"mac": "2.2081",
 		"ios": "2.2081"
 	},
-	"version": "v1.4.0",
+	"version": "v2.0.0",
 	"id": "fullydraco.waveassist",
 	"name": "Wave Assist",
 	"developer": "fullydraco",
-	"description": "Assist: rescues the player before death in every gamemode, learns your clicks, adapts its timing and looks ahead for hazards.",
+	"description": "Learning bot: remembers your best run and clicks, and after each death tries a click one step earlier until it passes.",
 	"settings": {
 		"assist-enabled": {
 			"type": "bool",
 			"name": "Enable Assist",
-			"description": "Turn the assist on or off.",
+			"description": "Turn the learning bot on or off.",
 			"default": false
 		},
-		"assist-method": {
-			"type": "string",
-			"name": "Method",
-			"description": "Rescue = step back 1 step and click. Rewind = step back several steps and click.",
-			"default": "Rescue",
-			"one-of": ["Rescue", "Rewind"]
+		"assist-replay": {
+			"type": "bool",
+			"name": "Replay best run",
+			"description": "Repeat the clicks of the best run in the next attempts.",
+			"default": true
 		},
-		"rewind-steps": {
+		"max-back-steps": {
 			"type": "int",
-			"name": "Rewind Steps",
-			"description": "How many physics steps to go back in Rewind method.",
-			"default": 4,
-			"min": 1,
-			"max": 30
-		},
-		"assist-learn": {
-			"type": "bool",
-			"name": "Learn",
-			"description": "Remember rescue spots and your own correct clicks, and adapt the click timing when it keeps dying.",
-			"default": true
-		},
-		"learn-margin": {
-			"type": "float",
-			"name": "Learn margin",
-			"description": "Starting value: how many units earlier to click on learned spots.",
-			"default": 8,
-			"min": 0,
-			"max": 60
-		},
-		"assist-lookahead": {
-			"type": "bool",
-			"name": "Lookahead",
-			"description": "Look ahead for spikes and saws and click before reaching them.",
-			"default": true
-		},
-		"lookahead-distance": {
-			"type": "float",
-			"name": "Lookahead distance",
-			"description": "How far ahead (in units) to look for hazards.",
-			"default": 60,
+			"name": "Max steps back",
+			"description": "How many steps earlier the bot may try before it flips the click, then gives up on that spot.",
+			"default": 150,
 			"min": 10,
-			"max": 200
+			"max": 600
 		},
-		"max-rescues": {
-			"type": "int",
-			"name": "Max rescues without progress",
-			"description": "After this many rescues without moving forward the player is allowed to die. 0 = unlimited.",
-			"default": 6,
-			"min": 0,
-			"max": 100
-		},
-		"miss-chance": {
-			"type": "float",
-			"name": "Miss chance (%)",
-			"description": "Chance that the assist does not save you, to look more human.",
-			"default": 0,
-			"min": 0,
-			"max": 100
+		"show-hud": {
+			"type": "bool",
+			"name": "Show status",
+			"description": "Show the learning status in the top left corner.",
+			"default": true
 		},
 		"practice-only": {
 			"type": "bool",
 			"name": "Only in practice mode",
-			"description": "Use the assist only in practice mode.",
+			"description": "Use the bot only in practice mode.",
 			"default": false
 		},
 		"gamemodes-title": {
@@ -90,49 +51,49 @@
 		"assist-cube": {
 			"type": "bool",
 			"name": "Cube",
-			"description": "Assist in cube (including mini cube).",
+			"description": "Learn in cube (including mini cube).",
 			"default": true
 		},
 		"assist-ship": {
 			"type": "bool",
 			"name": "Ship",
-			"description": "Assist in ship.",
+			"description": "Learn in ship.",
 			"default": true
 		},
 		"assist-ufo": {
 			"type": "bool",
 			"name": "UFO",
-			"description": "Assist in UFO.",
+			"description": "Learn in UFO.",
 			"default": true
 		},
 		"assist-ball": {
 			"type": "bool",
 			"name": "Ball",
-			"description": "Assist in ball.",
+			"description": "Learn in ball.",
 			"default": true
 		},
 		"assist-wave": {
 			"type": "bool",
 			"name": "Wave",
-			"description": "Assist in wave.",
+			"description": "Learn in wave.",
 			"default": true
 		},
 		"assist-robot": {
 			"type": "bool",
 			"name": "Robot",
-			"description": "Assist in robot.",
+			"description": "Learn in robot.",
 			"default": true
 		},
 		"assist-spider": {
 			"type": "bool",
 			"name": "Spider",
-			"description": "Assist in spider.",
+			"description": "Learn in spider.",
 			"default": true
 		},
 		"assist-swing": {
 			"type": "bool",
 			"name": "Swing",
-			"description": "Assist in swing.",
+			"description": "Learn in swing.",
 			"default": true
 		}
 	}
