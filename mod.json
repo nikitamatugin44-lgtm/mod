@@ -6,11 +6,11 @@
 		"mac": "2.2081",
 		"ios": "2.2081"
 	},
-	"version": "v1.3.0",
+	"version": "v1.4.0",
 	"id": "fullydraco.waveassist",
 	"name": "Wave Assist",
 	"developer": "fullydraco",
-	"description": "Assist: rescues the player on the last frame before death in every gamemode, remembers rescues and clicks earlier next time, with an Assist button in the pause menu.",
+	"description": "Assist: rescues the player before death in every gamemode, learns your clicks, adapts its timing and looks ahead for hazards.",
 	"settings": {
 		"assist-enabled": {
 			"type": "bool",
@@ -35,17 +35,31 @@
 		},
 		"assist-learn": {
 			"type": "bool",
-			"name": "Learn from rescues",
-			"description": "Remember where a rescue was needed and click there earlier in the next attempts.",
+			"name": "Learn",
+			"description": "Remember rescue spots and your own correct clicks, and adapt the click timing when it keeps dying.",
 			"default": true
 		},
 		"learn-margin": {
 			"type": "float",
 			"name": "Learn margin",
-			"description": "How many units earlier to click on learned spots. Higher = safer but may click too early.",
+			"description": "Starting value: how many units earlier to click on learned spots.",
 			"default": 8,
 			"min": 0,
 			"max": 60
+		},
+		"assist-lookahead": {
+			"type": "bool",
+			"name": "Lookahead",
+			"description": "Look ahead for spikes and saws and click before reaching them.",
+			"default": true
+		},
+		"lookahead-distance": {
+			"type": "float",
+			"name": "Lookahead distance",
+			"description": "How far ahead (in units) to look for hazards.",
+			"default": 60,
+			"min": 10,
+			"max": 200
 		},
 		"max-rescues": {
 			"type": "int",
