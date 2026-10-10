@@ -40,4 +40,7 @@ jobs:
     - uses: geode-sdk/build-geode-mod/combine@main
       id: build
 
-    - uses:
+    - uses: actions/upload-artifact@v4
+      with:
+        name: Build Output
+        path: ${{ steps.build.outputs.build-output }}
