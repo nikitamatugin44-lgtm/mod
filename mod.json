@@ -6,89 +6,179 @@
 		"mac": "2.2081",
 		"ios": "2.2081"
 	},
-	"version": "v2.0.1",
-	"id": "fullydraco.waveassist",
-	"name": "Wave Assist",
+	"version": "v1.0.0",
+	"id": "fullydraco.fakessb",
+	"name": "Fake SSB",
 	"developer": "fullydraco",
-	"description": "Learning bot: remembers your best run and clicks, and after each death tries a click one step earlier until it passes.",
+	"description": "Artificial scroll speed bug at chosen level percentages, configurable from the pause menu.",
 	"settings": {
-		"assist-enabled": {
+		"ssb-enabled": {
 			"type": "bool",
-			"name": "Enable Assist",
-			"description": "Turn the learning bot on or off.",
-			"default": false
-		},
-		"assist-replay": {
-			"type": "bool",
-			"name": "Replay best run",
-			"description": "Repeat the clicks of the best run in the next attempts.",
+			"name": "Enable",
+			"description": "Turn the artificial SSB on or off.",
 			"default": true
 		},
-		"max-back-steps": {
-			"type": "int",
-			"name": "Max steps back",
-			"description": "How many steps earlier the bot may try before it flips the click, then gives up on that spot.",
+		"ssb-method": {
+			"type": "string",
+			"name": "Method",
+			"description": "Shape = stretch/squeeze the horizontal movement. Speed = speed up / slow down the whole player.",
+			"default": "Shape",
+			"one-of": ["Shape", "Speed"]
+		},
+		"title1": { "type": "title", "name": "Slot 1" },
+		"t1-on": {
+			"type": "bool",
+			"name": "Enabled",
+			"description": "Use this slot.",
+			"default": true
+		},
+		"t1-start": {
+			"type": "float",
+			"name": "Start %",
+			"description": "Level percent where the effect starts.",
+			"default": 25,
+			"min": 0,
+			"max": 100
+		},
+		"t1-end": {
+			"type": "float",
+			"name": "End %",
+			"description": "Level percent where the effect ends.",
+			"default": 35,
+			"min": 0,
+			"max": 100
+		},
+		"t1-speed": {
+			"type": "float",
+			"name": "Speed %",
+			"description": "100 = normal, above = faster / stretched, below = slower / squeezed, 0 = frozen.",
+			"default": 125,
+			"min": 0,
+			"max": 300
+		},
+		"title2": { "type": "title", "name": "Slot 2" },
+		"t2-on": {
+			"type": "bool",
+			"name": "Enabled",
+			"description": "Use this slot.",
+			"default": false
+		},
+		"t2-start": {
+			"type": "float",
+			"name": "Start %",
+			"description": "Level percent where the effect starts.",
+			"default": 50,
+			"min": 0,
+			"max": 100
+		},
+		"t2-end": {
+			"type": "float",
+			"name": "End %",
+			"description": "Level percent where the effect ends.",
+			"default": 60,
+			"min": 0,
+			"max": 100
+		},
+		"t2-speed": {
+			"type": "float",
+			"name": "Speed %",
+			"description": "100 = normal, above = faster / stretched, below = slower / squeezed, 0 = frozen.",
+			"default": 80,
+			"min": 0,
+			"max": 300
+		},
+		"title3": { "type": "title", "name": "Slot 3" },
+		"t3-on": {
+			"type": "bool",
+			"name": "Enabled",
+			"description": "Use this slot.",
+			"default": false
+		},
+		"t3-start": {
+			"type": "float",
+			"name": "Start %",
+			"description": "Level percent where the effect starts.",
+			"default": 70,
+			"min": 0,
+			"max": 100
+		},
+		"t3-end": {
+			"type": "float",
+			"name": "End %",
+			"description": "Level percent where the effect ends.",
+			"default": 75,
+			"min": 0,
+			"max": 100
+		},
+		"t3-speed": {
+			"type": "float",
+			"name": "Speed %",
+			"description": "100 = normal, above = faster / stretched, below = slower / squeezed, 0 = frozen.",
 			"default": 150,
-			"min": 10,
-			"max": 600
+			"min": 0,
+			"max": 300
 		},
-		"practice-only": {
+		"title4": { "type": "title", "name": "Slot 4" },
+		"t4-on": {
 			"type": "bool",
-			"name": "Only in practice mode",
-			"description": "Use the bot only in practice mode.",
+			"name": "Enabled",
+			"description": "Use this slot.",
 			"default": false
 		},
-		"gamemodes-title": {
-			"type": "title",
-			"name": "Gamemodes"
+		"t4-start": {
+			"type": "float",
+			"name": "Start %",
+			"description": "Level percent where the effect starts.",
+			"default": 80,
+			"min": 0,
+			"max": 100
 		},
-		"assist-cube": {
-			"type": "bool",
-			"name": "Cube",
-			"description": "Learn in cube (including mini cube).",
-			"default": true
+		"t4-end": {
+			"type": "float",
+			"name": "End %",
+			"description": "Level percent where the effect ends.",
+			"default": 85,
+			"min": 0,
+			"max": 100
 		},
-		"assist-ship": {
-			"type": "bool",
-			"name": "Ship",
-			"description": "Learn in ship.",
-			"default": true
+		"t4-speed": {
+			"type": "float",
+			"name": "Speed %",
+			"description": "100 = normal, above = faster / stretched, below = slower / squeezed, 0 = frozen.",
+			"default": 60,
+			"min": 0,
+			"max": 300
 		},
-		"assist-ufo": {
+		"title5": { "type": "title", "name": "Slot 5" },
+		"t5-on": {
 			"type": "bool",
-			"name": "UFO",
-			"description": "Learn in UFO.",
-			"default": true
+			"name": "Enabled",
+			"description": "Use this slot.",
+			"default": false
 		},
-		"assist-ball": {
-			"type": "bool",
-			"name": "Ball",
-			"description": "Learn in ball.",
-			"default": true
+		"t5-start": {
+			"type": "float",
+			"name": "Start %",
+			"description": "Level percent where the effect starts.",
+			"default": 90,
+			"min": 0,
+			"max": 100
 		},
-		"assist-wave": {
-			"type": "bool",
-			"name": "Wave",
-			"description": "Learn in wave.",
-			"default": true
+		"t5-end": {
+			"type": "float",
+			"name": "End %",
+			"description": "Level percent where the effect ends.",
+			"default": 95,
+			"min": 0,
+			"max": 100
 		},
-		"assist-robot": {
-			"type": "bool",
-			"name": "Robot",
-			"description": "Learn in robot.",
-			"default": true
-		},
-		"assist-spider": {
-			"type": "bool",
-			"name": "Spider",
-			"description": "Learn in spider.",
-			"default": true
-		},
-		"assist-swing": {
-			"type": "bool",
-			"name": "Swing",
-			"description": "Learn in swing.",
-			"default": true
+		"t5-speed": {
+			"type": "float",
+			"name": "Speed %",
+			"description": "100 = normal, above = faster / stretched, below = slower / squeezed, 0 = frozen.",
+			"default": 0,
+			"min": 0,
+			"max": 300
 		}
 	}
 }
