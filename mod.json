@@ -1,184 +1,29 @@
 {
-	"geode": "5.11.1",
-	"gd": {
-		"win": "2.2081",
-		"android": "2.2081",
-		"mac": "2.2081",
-		"ios": "2.2081"
-	},
-	"version": "v1.0.0",
-	"id": "fullydraco.fakessb",
-	"name": "Fake SSB",
-	"developer": "fullydraco",
-	"description": "Artificial scroll speed bug at chosen level percentages, configurable from the pause menu.",
-	"settings": {
-		"ssb-enabled": {
-			"type": "bool",
-			"name": "Enable",
-			"description": "Turn the artificial SSB on or off.",
-			"default": true
-		},
-		"ssb-method": {
-			"type": "string",
-			"name": "Method",
-			"description": "Shape = stretch/squeeze the horizontal movement. Speed = speed up / slow down the whole player.",
-			"default": "Shape",
-			"one-of": ["Shape", "Speed"]
-		},
-		"title1": { "type": "title", "name": "Slot 1" },
-		"t1-on": {
-			"type": "bool",
-			"name": "Enabled",
-			"description": "Use this slot.",
-			"default": true
-		},
-		"t1-start": {
-			"type": "float",
-			"name": "Start %",
-			"description": "Level percent where the effect starts.",
-			"default": 25,
-			"min": 0,
-			"max": 100
-		},
-		"t1-end": {
-			"type": "float",
-			"name": "End %",
-			"description": "Level percent where the effect ends.",
-			"default": 35,
-			"min": 0,
-			"max": 100
-		},
-		"t1-speed": {
-			"type": "float",
-			"name": "Speed %",
-			"description": "100 = normal, above = faster / stretched, below = slower / squeezed, 0 = frozen.",
-			"default": 125,
-			"min": 0,
-			"max": 300
-		},
-		"title2": { "type": "title", "name": "Slot 2" },
-		"t2-on": {
-			"type": "bool",
-			"name": "Enabled",
-			"description": "Use this slot.",
-			"default": false
-		},
-		"t2-start": {
-			"type": "float",
-			"name": "Start %",
-			"description": "Level percent where the effect starts.",
-			"default": 50,
-			"min": 0,
-			"max": 100
-		},
-		"t2-end": {
-			"type": "float",
-			"name": "End %",
-			"description": "Level percent where the effect ends.",
-			"default": 60,
-			"min": 0,
-			"max": 100
-		},
-		"t2-speed": {
-			"type": "float",
-			"name": "Speed %",
-			"description": "100 = normal, above = faster / stretched, below = slower / squeezed, 0 = frozen.",
-			"default": 80,
-			"min": 0,
-			"max": 300
-		},
-		"title3": { "type": "title", "name": "Slot 3" },
-		"t3-on": {
-			"type": "bool",
-			"name": "Enabled",
-			"description": "Use this slot.",
-			"default": false
-		},
-		"t3-start": {
-			"type": "float",
-			"name": "Start %",
-			"description": "Level percent where the effect starts.",
-			"default": 70,
-			"min": 0,
-			"max": 100
-		},
-		"t3-end": {
-			"type": "float",
-			"name": "End %",
-			"description": "Level percent where the effect ends.",
-			"default": 75,
-			"min": 0,
-			"max": 100
-		},
-		"t3-speed": {
-			"type": "float",
-			"name": "Speed %",
-			"description": "100 = normal, above = faster / stretched, below = slower / squeezed, 0 = frozen.",
-			"default": 150,
-			"min": 0,
-			"max": 300
-		},
-		"title4": { "type": "title", "name": "Slot 4" },
-		"t4-on": {
-			"type": "bool",
-			"name": "Enabled",
-			"description": "Use this slot.",
-			"default": false
-		},
-		"t4-start": {
-			"type": "float",
-			"name": "Start %",
-			"description": "Level percent where the effect starts.",
-			"default": 80,
-			"min": 0,
-			"max": 100
-		},
-		"t4-end": {
-			"type": "float",
-			"name": "End %",
-			"description": "Level percent where the effect ends.",
-			"default": 85,
-			"min": 0,
-			"max": 100
-		},
-		"t4-speed": {
-			"type": "float",
-			"name": "Speed %",
-			"description": "100 = normal, above = faster / stretched, below = slower / squeezed, 0 = frozen.",
-			"default": 60,
-			"min": 0,
-			"max": 300
-		},
-		"title5": { "type": "title", "name": "Slot 5" },
-		"t5-on": {
-			"type": "bool",
-			"name": "Enabled",
-			"description": "Use this slot.",
-			"default": false
-		},
-		"t5-start": {
-			"type": "float",
-			"name": "Start %",
-			"description": "Level percent where the effect starts.",
-			"default": 90,
-			"min": 0,
-			"max": 100
-		},
-		"t5-end": {
-			"type": "float",
-			"name": "End %",
-			"description": "Level percent where the effect ends.",
-			"default": 95,
-			"min": 0,
-			"max": 100
-		},
-		"t5-speed": {
-			"type": "float",
-			"name": "Speed %",
-			"description": "100 = normal, above = faster / stretched, below = slower / squeezed, 0 = frozen.",
-			"default": 0,
-			"min": 0,
-			"max": 300
-		}
-	}
+"geode": "5.11.1",
+"gd": {
+"win": "2.2081",
+"android": "2.2081",
+"mac": "2.2081",
+"ios": "2.2081"
+},
+"version": "v1.1.0",
+"id": "fullydraco.fakessb",
+"name": "Fake SSB",
+"developer": "fullydraco",
+"description": "Artificial scroll speed bug with up to 50 configurable percentage points.",
+"settings": {
+"ssb-enabled": {
+"type": "bool",
+"name": "Enable",
+"description": "Enable or disable Fake SSB.",
+"default": true
+},
+"ssb-method": {
+"type": "string",
+"name": "Method",
+"description": "Shape stretches horizontal movement; Speed changes player update speed.",
+"default": "Shape",
+"one-of": ["Shape", "Speed"]
+}
+}
 }
