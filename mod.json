@@ -6,33 +6,12 @@
 		"mac": "2.2081",
 		"ios": "2.2081"
 	},
-	"version": "v1.1.0",
+	"version": "v1.2.0",
 	"id": "fullydraco.fakessb",
 	"name": "Fake SSB",
 	"developer": "fullydraco",
-	"description": "Artificial scroll speed bug: set level percent points and speed values in a table from the pause menu.",
+	"description": "Artificial scroll speed bug, plus physics and animation speed at chosen level percents. Everything is set from the pause menu.",
 	"resources": {
 		"sprites": ["resources/*.png"]
-	},
-	"settings": {
-		"ssb-enabled": {
-			"type": "bool",
-			"name": "Enable",
-			"description": "Turn the artificial SSB on or off.",
-			"default": true
-		},
-		"ssb-method": {
-			"type": "string",
-			"name": "Method",
-			"description": "Shape = stretch/squeeze the horizontal movement. Speed = speed up / slow down the whole player.",
-			"default": "Shape",
-			"one-of": ["Shape", "Speed"]
-		},
-		"ssb-smooth": {
-			"type": "bool",
-			"name": "Smooth",
-			"description": "Change the speed smoothly between points instead of in steps.",
-			"default": false
-		}
 	}
 }
