@@ -1,29 +1,38 @@
 {
-"geode": "5.11.1",
-"gd": {
-"win": "2.2081",
-"android": "2.2081",
-"mac": "2.2081",
-"ios": "2.2081"
-},
-"version": "v1.1.0",
-"id": "fullydraco.fakessb",
-"name": "Fake SSB",
-"developer": "fullydraco",
-"description": "Artificial scroll speed bug with up to 50 configurable percentage points.",
-"settings": {
-"ssb-enabled": {
-"type": "bool",
-"name": "Enable",
-"description": "Enable or disable Fake SSB.",
-"default": true
-},
-"ssb-method": {
-"type": "string",
-"name": "Method",
-"description": "Shape stretches horizontal movement; Speed changes player update speed.",
-"default": "Shape",
-"one-of": ["Shape", "Speed"]
-}
-}
+	"geode": "5.11.1",
+	"gd": {
+		"win": "2.2081",
+		"android": "2.2081",
+		"mac": "2.2081",
+		"ios": "2.2081"
+	},
+	"version": "v1.1.0",
+	"id": "fullydraco.fakessb",
+	"name": "Fake SSB",
+	"developer": "fullydraco",
+	"description": "Artificial scroll speed bug: set level percent points and speed values in a table from the pause menu.",
+	"resources": {
+		"sprites": ["resources/*.png"]
+	},
+	"settings": {
+		"ssb-enabled": {
+			"type": "bool",
+			"name": "Enable",
+			"description": "Turn the artificial SSB on or off.",
+			"default": true
+		},
+		"ssb-method": {
+			"type": "string",
+			"name": "Method",
+			"description": "Shape = stretch/squeeze the horizontal movement. Speed = speed up / slow down the whole player.",
+			"default": "Shape",
+			"one-of": ["Shape", "Speed"]
+		},
+		"ssb-smooth": {
+			"type": "bool",
+			"name": "Smooth",
+			"description": "Change the speed smoothly between points instead of in steps.",
+			"default": false
+		}
+	}
 }
