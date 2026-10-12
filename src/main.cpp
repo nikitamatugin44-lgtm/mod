@@ -209,25 +209,90 @@ class $modify(SsbPause, PauseLayer) {
 	void customSetup() {
 		PauseLayer::customSetup();
 
-		// the logo, slowly spinning; text button if the image is missing
+		auto win = CCDirector::get()->getWinSize();
+
+		// the icon (copy of logo.png in resources); text button if it is missing
 		CCNode* icon = CCSprite::create("ssb.png"_spr);
-		if (icon) {
-			icon->setScale(0.18f);
-			icon->runAction(CCRepeatForever::create(CCRotateBy::create(4.f, 360.f)));
-		} else {
-			icon = ButtonSprite::create("SSB");
+		if (!icon) icon = ButtonSprite::create("SSB");
+
+		// find the menu with the buttons on the right side
+		CCMenu* rightMenu = nullptr;
+		if (auto byId = typeinfo_cast<CCMenu*>(this->getChildByID("right-button-menu"))) {
+			rightMenu = byId;
+		} else if (auto kids = this->getChildren()) {
+			int best = 0;
+			for (auto obj : CCArrayExt<CCNode*>(kids)) {
+				auto menu = typeinfo_cast<CCMenu*>(obj);
+				if (!menu) continue;
+				if (menu->getPositionX() < win.width * 0.6f) continue;
+				int n = static_cast<int>(menu->getChildrenCount());
+				if (n > best) {
+					best = n;
+					rightMenu = menu;
+				}
+			}
 		}
+
+		// size the icon like the buttons next to it
+		float size = 45.f;
+		if (rightMenu && rightMenu->getChildrenCount() > 0) {
+			if (auto first = typeinfo_cast<CCNode*>(rightMenu->getChildren()->objectAtIndex(0))) {
+				float h = first->getContentSize().height;
+				if (h > 10.f) size = h;
+			}
+		}
+		float ch = icon->getContentSize().height;
+		if (ch > 1.f) icon->setScale(size / ch);
 
 		auto btn = CCMenuItemSpriteExtra::create(
 			icon, this, menu_selector(SsbPause::onSsb)
 		);
+		btn->setID("ssb-button"_spr);
 
-		auto menu = CCMenu::create();
-		menu->addChild(btn);
+		if (rightMenu) {
+			// remember where the other buttons are
+			float x = 0.f;
+			float minY = 0.f;
+			float maxY = 0.f;
+			bool any = false;
+			if (auto kids = rightMenu->getChildren()) {
+				for (auto obj : CCArrayExt<CCNode*>(kids)) {
+					if (!obj) continue;
+					CCPoint p = obj->getPosition();
+					if (!any) {
+						x = p.x;
+						minY = p.y;
+						maxY = p.y;
+						any = true;
+					} else {
+						minY = std::min(minY, p.y);
+						maxY = std::max(maxY, p.y);
+					}
+				}
+			}
 
-		auto win = CCDirector::get()->getWinSize();
-		menu->setPosition({ win.width - 45.f, win.height - 45.f });
-		this->addChild(menu);
+			rightMenu->addChild(btn);
+
+			if (rightMenu->getLayout()) {
+				// the menu arranges its buttons by itself
+				rightMenu->updateLayout();
+			} else if (any) {
+				// no layout: put it under the last button, or above if there is no room
+				float gap = size + 6.f;
+				CCPoint below = rightMenu->convertToWorldSpace(CCPoint(x, minY - gap));
+				if (below.y > size * 0.6f) {
+					btn->setPosition({ x, minY - gap });
+				} else {
+					btn->setPosition({ x, maxY + gap });
+				}
+			}
+		} else {
+			// right menu not found: own menu near the top right
+			auto menu = CCMenu::create();
+			menu->addChild(btn);
+			menu->setPosition({ win.width - 110.f, win.height - 40.f });
+			this->addChild(menu);
+		}
 	}
 
 	void onSsb(CCObject*) {
