@@ -1,281 +1,236 @@
 #include <Geode/Geode.hpp>
 #include <Geode/ui/Popup.hpp>
 #include <Geode/ui/TextInput.hpp>
-#include <Geode/ui/ScrollLayer.hpp>
+#include <Geode/modify/PlayLayer.hpp>
 #include <Geode/modify/PlayerObject.hpp>
 #include <Geode/modify/PauseLayer.hpp>
-#include <algorithm>
-#include <cmath>
-#include <sstream>
-#include <string>
 #include <vector>
-#include <optional>
+#include <algorithm>
+#include <cstdlib>
+#include <string>
 
 using namespace geode::prelude;
 
-struct SsbPoint {
-    float percent = 0.f;
-    float value = 100.f;
+struct Pt {
+	float pct;
+	float speed;
 };
 
-static std::vector<SsbPoint> loadPoints(bool sortPoints = true) {
-    // Format: percent:value;percent:value. Old slot defaults migrate to two points.
-    auto raw = Mod::get()->getSavedValue<std::string>("ssb-points", "25:125;35:100");
-    std::vector<SsbPoint> points;
-    std::stringstream all(raw);
-    std::string part;
-    while (std::getline(all, part, ';')) {
-        auto split = part.find(':');
-        if (split == std::string::npos) continue;
-        try {
-            float pct = std::stof(part.substr(0, split));
-            float val = std::stof(part.substr(split + 1));
-            if (!std::isfinite(pct) || !std::isfinite(val)) continue;
-            pct = std::clamp(pct, 0.f, 100.f);
-            val = std::clamp(val, 0.f, 300.f);
-            points.push_back({pct, val});
-        } catch (...) {}
-        if (points.size() >= 50) break;
-    }
-    if (sortPoints) {
-        std::stable_sort(points.begin(), points.end(), [](auto const& a, auto const& b) {
-            return a.percent < b.percent;
-        });
-    }
-    return points;
+static std::vector<Pt> g_points;
+static bool g_reload = true;
+
+// the table is saved as text: "25:125,35:100"
+static std::vector<Pt> loadPoints() {
+	std::vector<Pt> out;
+	std::string s = Mod::get()->getSavedValue<std::string>("points", "25:125,35:100");
+
+	size_t i = 0;
+	while (i <= s.size()) {
+		size_t j = s.find(',', i);
+		if (j == std::string::npos) j = s.size();
+
+		std::string item = s.substr(i, j - i);
+		size_t c = item.find(':');
+		if (c != std::string::npos) {
+			float a = std::strtof(item.substr(0, c).c_str(), nullptr);
+			float b = std::strtof(item.substr(c + 1).c_str(), nullptr);
+			out.push_back(Pt{ a, b });
+		}
+		i = j + 1;
+	}
+
+	std::sort(out.begin(), out.end(), [](const Pt& x, const Pt& y) {
+		return x.pct < y.pct;
+	});
+	return out;
 }
 
-static void savePoints(std::vector<SsbPoint> const& points) {
-    std::ostringstream out;
-    for (size_t i = 0; i < points.size(); ++i) {
-        if (i) out << ';';
-        out << points[i].percent << ':' << points[i].value;
-    }
-    Mod::get()->setSavedValue("ssb-points", out.str());
-}
-
-// Stepped curve: default is 100% until the first point, then each point's value
-// remains active until the next point is reached.
+// speed factor for the current level percent (1.0 = no effect)
 static float currentFactor() {
-    auto mod = Mod::get();
-    if (!mod->getSettingValue<bool>("ssb-enabled")) return 1.f;
-    auto pl = PlayLayer::get();
-    if (!pl) return 1.f;
+	auto mod = Mod::get();
+	if (!mod->getSettingValue<bool>("ssb-enabled")) return 1.f;
 
-    float pct = static_cast<float>(pl->getCurrentPercent());
-    float value = 100.f;
-    for (auto const& point : loadPoints()) {
-        if (pct < point.percent) break;
-        value = point.value;
-    }
-    return value / 100.f;
+	auto pl = PlayLayer::get();
+	if (!pl) return 1.f;
+
+	if (g_reload) {
+		g_points = loadPoints();
+		g_reload = false;
+	}
+	if (g_points.empty()) return 1.f;
+
+	float pct = pl->getCurrentPercent();
+
+	int idx = -1;
+	for (int i = 0; i < static_cast<int>(g_points.size()); i++) {
+		if (g_points[i].pct <= pct) idx = i;
+		else break;
+	}
+	if (idx < 0) return 1.f;
+
+	float v = g_points[idx].speed;
+
+	if (mod->getSettingValue<bool>("ssb-smooth") &&
+		idx + 1 < static_cast<int>(g_points.size())) {
+		auto& a = g_points[idx];
+		auto& b = g_points[idx + 1];
+		float span = b.pct - a.pct;
+		if (span > 0.001f) {
+			float t = (pct - a.pct) / span;
+			v = a.speed + (b.speed - a.speed) * t;
+		}
+	}
+	return v / 100.f;
 }
 
-class SsbSettingsPopup : public Popup {
+// the table window
+class PointsPopup : public Popup {
 protected:
-    ScrollLayer* m_scroll = nullptr;
+	std::vector<TextInput*> m_pct;
+	std::vector<TextInput*> m_spd;
 
-    bool init() {
-        if (!Popup::init(360.f, 280.f)) return false;
-        this->setTitle("Fake SSB");
+	bool init() {
+		if (!Popup::init(340.f, 250.f)) return false;
 
-        auto mod = Mod::get();
-        auto enabledText = mod->getSettingValue<bool>("ssb-enabled") ? "SSB: ON" : "SSB: OFF";
-        auto enabledBtn = CCMenuItemSpriteExtra::create(
-            ButtonSprite::create(enabledText, 90, true, "bigFont.fnt", "GJ_button_01.png", 25.f, 0.6f),
-            this, menu_selector(SsbSettingsPopup::onToggleEnabled));
-        enabledBtn->setPosition({-100.f, 103.f});
+		this->setTitle("Fake SSB points");
 
-        auto method = mod->getSettingValue<std::string>("ssb-method");
-        auto methodText = "Method: " + method;
-        auto methodBtn = CCMenuItemSpriteExtra::create(
-            ButtonSprite::create(methodText.c_str(), 120, true, "bigFont.fnt", "GJ_button_02.png", 25.f, 0.55f),
-            this, menu_selector(SsbSettingsPopup::onToggleMethod));
-        methodBtn->setPosition({55.f, 103.f});
+		auto sz = m_mainLayer->getContentSize();
+		CCPoint c(sz.width * 0.5f, sz.height * 0.5f);
 
-        auto topMenu = CCMenu::create();
-        topMenu->setPosition({m_size.width / 2.f, m_size.height / 2.f});
-        topMenu->addChild(enabledBtn);
-        topMenu->addChild(methodBtn);
-        m_mainLayer->addChild(topMenu);
+		auto h1 = CCLabelBMFont::create("Level %", "goldFont.fnt");
+		h1->setScale(0.5f);
+		h1->setPosition({ c.x - 70.f, c.y + 88.f });
+		m_mainLayer->addChild(h1);
 
-        auto headers = CCNode::create();
-        auto pLabel = CCLabelBMFont::create("Percent", "bigFont.fnt");
-        pLabel->setScale(0.42f);
-        pLabel->setPosition({m_size.width / 2.f - 95.f, m_size.height / 2.f + 67.f});
-        m_mainLayer->addChild(pLabel);
-        auto vLabel = CCLabelBMFont::create("Value %", "bigFont.fnt");
-        vLabel->setScale(0.42f);
-        vLabel->setPosition({m_size.width / 2.f + 5.f, m_size.height / 2.f + 67.f});
-        m_mainLayer->addChild(vLabel);
+		auto h2 = CCLabelBMFont::create("Speed %", "goldFont.fnt");
+		h2->setScale(0.5f);
+		h2->setPosition({ c.x + 70.f, c.y + 88.f });
+		m_mainLayer->addChild(h2);
 
-        auto addSpr = ButtonSprite::create("+ Add point", 100, true, "bigFont.fnt", "GJ_button_01.png", 25.f, 0.55f);
-        auto addBtn = CCMenuItemSpriteExtra::create(addSpr, this, menu_selector(SsbSettingsPopup::onAddPoint));
-        addBtn->setPosition({m_size.width / 2.f, 20.f});
-        auto bottomMenu = CCMenu::create();
-        bottomMenu->setPosition({0.f, 0.f});
-        bottomMenu->addChild(addBtn);
-        m_mainLayer->addChild(bottomMenu);
+		auto pts = loadPoints();
 
-        this->rebuildRows();
-        return true;
-    }
+		for (int i = 0; i < 7; i++) {
+			float y = c.y + 62.f - 22.f * static_cast<float>(i);
 
-    void rebuildRows() {
-        if (m_scroll) {
-            m_scroll->removeFromParentAndCleanup(true);
-            m_scroll = nullptr;
-        }
-        auto points = loadPoints();
-        auto rect = CCRect(34.f, 47.f, m_size.width - 68.f, 125.f);
-        m_scroll = ScrollLayer::create(rect, true, true);
-        if (!m_scroll) return;
-        m_mainLayer->addChild(m_scroll);
+			auto a = TextInput::create(90.f, "%", "bigFont.fnt");
+			a->setFilter("0123456789.");
+			a->setScale(0.7f);
+			a->setPosition({ c.x - 70.f, y });
+			m_mainLayer->addChild(a);
 
-        float rowHeight = 28.f;
-        float contentHeight = std::max(125.f, static_cast<float>(points.size()) * rowHeight + 8.f);
-        m_scroll->m_contentLayer->setContentSize({rect.size.width, contentHeight});
+			auto b = TextInput::create(90.f, "speed", "bigFont.fnt");
+			b->setFilter("0123456789.");
+			b->setScale(0.7f);
+			b->setPosition({ c.x + 70.f, y });
+			m_mainLayer->addChild(b);
 
-        for (size_t i = 0; i < points.size(); ++i) {
-            float y = contentHeight - 18.f - static_cast<float>(i) * rowHeight;
-            auto const point = points[i];
+			if (i < static_cast<int>(pts.size())) {
+				a->setString(fmt::format("{:g}", pts[i].pct));
+				b->setString(fmt::format("{:g}", pts[i].speed));
+			}
 
-            auto percentInput = TextInput::create(70.f, "0-100", "bigFont.fnt");
-            percentInput->setString(std::to_string(static_cast<int>(std::round(point.percent))), false);
-            percentInput->setPosition({75.f, y});
-            percentInput->setCallback([i](std::string const& text) {
-                auto value = parseNumber(text, 0.f, 100.f);
-                auto pts = loadPoints(false);
-                if (i >= pts.size() || !value) return;
-                pts[i].percent = *value;
-                savePoints(pts);
-            });
-            m_scroll->m_contentLayer->addChild(percentInput);
+			m_pct.push_back(a);
+			m_spd.push_back(b);
+		}
 
-            auto valueInput = TextInput::create(70.f, "0-300", "bigFont.fnt");
-            valueInput->setString(std::to_string(static_cast<int>(std::round(point.value))), false);
-            valueInput->setPosition({170.f, y});
-            valueInput->setCallback([i](std::string const& text) {
-                auto value = parseNumber(text, 0.f, 300.f);
-                auto pts = loadPoints(false);
-                if (i >= pts.size() || !value) return;
-                pts[i].value = *value;
-                savePoints(pts);
-            });
-            m_scroll->m_contentLayer->addChild(valueInput);
+		auto hint = CCLabelBMFont::create(
+			"Speed applies from this % until the next point. 100 = normal.",
+			"bigFont.fnt"
+		);
+		hint->setScale(0.3f);
+		hint->setPosition({ c.x, c.y - 102.f });
+		m_mainLayer->addChild(hint);
 
-            auto delSpr = ButtonSprite::create("X", 30, true, "bigFont.fnt", "GJ_button_06.png", 20.f, 0.55f);
-            auto delBtn = CCMenuItemSpriteExtra::create(delSpr, this, menu_selector(SsbSettingsPopup::onDeletePoint));
-            delBtn->setTag(static_cast<int>(i));
-            delBtn->setPosition({rect.size.width - 18.f, y});
-            auto rowMenu = CCMenu::create();
-            rowMenu->setPosition({0.f, 0.f});
-            rowMenu->addChild(delBtn);
-            m_scroll->m_contentLayer->addChild(rowMenu);
-        }
-    }
+		return true;
+	}
 
-    static std::optional<float> parseNumber(std::string const& text, float min, float max) {
-        try {
-            size_t used = 0;
-            float value = std::stof(text, &used);
-            if (used != text.size() || !std::isfinite(value)) return std::nullopt;
-            return std::clamp(value, min, max);
-        } catch (...) { return std::nullopt; }
-    }
-
-    void onToggleEnabled(CCObject*) {
-        auto mod = Mod::get();
-        mod->setSettingValue("ssb-enabled", !mod->getSettingValue<bool>("ssb-enabled"));
-        this->removeFromParentAndCleanup(true);
-        SsbSettingsPopup::create()->show();
-    }
-
-    void onToggleMethod(CCObject*) {
-        auto mod = Mod::get();
-        auto current = mod->getSettingValue<std::string>("ssb-method");
-        mod->setSettingValue("ssb-method", current == "Shape" ? "Speed" : "Shape");
-        this->removeFromParentAndCleanup(true);
-        SsbSettingsPopup::create()->show();
-    }
-
-    void onAddPoint(CCObject*) {
-        auto points = loadPoints();
-        if (points.size() >= 50) {
-            FLAlertLayer::create("Fake SSB", "You can add up to 50 points.", "OK")->show();
-            return;
-        }
-        points.push_back({0.f, 100.f});
-        std::stable_sort(points.begin(), points.end(), [](auto const& a, auto const& b) { return a.percent < b.percent; });
-        savePoints(points);
-        this->rebuildRows();
-    }
-
-    void onDeletePoint(CCObject* sender) {
-        auto points = loadPoints();
-        auto index = static_cast<size_t>(sender->getTag());
-        if (index < points.size()) points.erase(points.begin() + index);
-        savePoints(points);
-        this->rebuildRows();
-    }
+	void saveFromInputs() {
+		std::string out;
+		for (size_t i = 0; i < m_pct.size(); i++) {
+			std::string a = m_pct[i]->getString();
+			std::string b = m_spd[i]->getString();
+			if (a.empty() || b.empty()) continue;
+			if (!out.empty()) out += ",";
+			out += a + ":" + b;
+		}
+		Mod::get()->setSavedValue<std::string>("points", out);
+		g_reload = true;
+	}
 
 public:
-    static SsbSettingsPopup* create() {
-        auto ret = new SsbSettingsPopup();
-        if (ret->init()) { ret->autorelease(); return ret; }
-        delete ret;
-        return nullptr;
-    }
+	static PointsPopup* create() {
+		auto ret = new PointsPopup();
+		if (ret->init()) {
+			ret->autorelease();
+			return ret;
+		}
+		delete ret;
+		return nullptr;
+	}
+
+	// the table is saved when the window is closed
+	~PointsPopup() {
+		this->saveFromInputs();
+	}
 };
 
 class $modify(SsbPlayer, PlayerObject) {
 public:
-    void update(float dt) {
-        static int tick = 0;
-        static float cached = 1.f;
-        if ((tick++ % 4) == 0) cached = currentFactor();
-        float factor = cached;
+	void update(float dt) {
+		// do not read the settings on every single step
+		static int tick = 0;
+		static float cached = 1.f;
+		if ((tick++ % 4) == 0) cached = currentFactor();
+		float f = cached;
 
-        if (factor == 1.f) {
-            PlayerObject::update(dt);
-            return;
-        }
-        if (Mod::get()->getSettingValue<std::string>("ssb-method") == "Speed") {
-            PlayerObject::update(dt * factor);
-            return;
-        }
-        float oldX = this->getPositionX();
-        PlayerObject::update(dt);
-        float dx = this->getPositionX() - oldX;
-        if (dx <= 0.f || dx > 50.f) return;
-        this->setPosition(CCPoint(oldX + dx * factor, this->getPositionY()));
-    }
+		if (f == 1.f) {
+			PlayerObject::update(dt);
+			return;
+		}
+
+		// Speed: the whole player just runs faster or slower
+		if (Mod::get()->getSettingValue<std::string>("ssb-method") == "Speed") {
+			PlayerObject::update(dt * f);
+			return;
+		}
+
+		// Shape: only the forward movement is stretched or squeezed
+		float oldX = this->getPositionX();
+		PlayerObject::update(dt);
+
+		float dx = this->getPositionX() - oldX;
+		if (dx <= 0.f || dx > 50.f) return; // ignore teleports and respawns
+
+		this->setPosition(CCPoint(oldX + dx * f, this->getPositionY()));
+	}
 };
 
 class $modify(SsbPause, PauseLayer) {
-    void customSetup() {
-        PauseLayer::customSetup();
+	void customSetup() {
+		PauseLayer::customSetup();
 
-        // Put resources/logo.png in the mod's resources directory.
-        auto spr = CCSprite::create("logo.png");
-        if (!spr) {
-            spr = CCSprite::createWithSpriteFrameName("GJ_infoIcon_001.png");
-        }
-        if (!spr) {
-            spr = CCSprite::create();
-        }
-        spr->setScale(0.45f);
-        spr->runAction(CCRepeatForever::create(CCRotateBy::create(2.f, 360.f)));
+		// the logo, slowly spinning; text button if the image is missing
+		CCNode* icon = CCSprite::create("ssb.png"_spr);
+		if (icon) {
+			icon->setScale(0.18f);
+			icon->runAction(CCRepeatForever::create(CCRotateBy::create(4.f, 360.f)));
+		} else {
+			icon = ButtonSprite::create("SSB");
+		}
 
-        auto btn = CCMenuItemSpriteExtra::create(spr, this, menu_selector(SsbPause::onSsb));
-        auto menu = CCMenu::create();
-        menu->addChild(btn);
-        auto win = CCDirector::get()->getWinSize();
-        menu->setPosition({win.width - 60.f, win.height - 30.f});
-        this->addChild(menu);
-    }
+		auto btn = CCMenuItemSpriteExtra::create(
+			icon, this, menu_selector(SsbPause::onSsb)
+		);
 
-    void onSsb(CCObject*) {
-        SsbSettingsPopup::create()->show();
-    }
+		auto menu = CCMenu::create();
+		menu->addChild(btn);
+
+		auto win = CCDirector::get()->getWinSize();
+		menu->setPosition({ win.width - 45.f, win.height - 45.f });
+		this->addChild(menu);
+	}
+
+	void onSsb(CCObject*) {
+		if (auto p = PointsPopup::create()) p->show();
+	}
 };
