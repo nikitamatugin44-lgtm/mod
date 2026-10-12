@@ -8,56 +8,93 @@
 #include <algorithm>
 #include <cstdlib>
 #include <string>
+#include "shared.hpp"
 
 using namespace geode::prelude;
 
+float g_animFactor = 1.f;
+float g_partFactor = 1.f;
+
+// one row of the table: from this level percent on, until the next row
 struct Pt {
 	float pct;
-	float speed;
+	float speed;   // x movement (SSB)
+	float jump;    // cube jump height
+	float grav;    // gravity
+	float anim;    // animation speed
+	float part;    // particle speed
+};
+
+// the values that are active right now, as factors (1.0 = normal)
+struct Cur {
+	float speed = 1.f;
+	float jump = 1.f;
+	float grav = 1.f;
+	float anim = 1.f;
+	float part = 1.f;
 };
 
 static std::vector<Pt> g_points;
+static bool g_enabled = true;
+static bool g_methodSpeed = false;
+static bool g_smooth = false;
 static bool g_reload = true;
+static Cur g_now;
 
-// the table is saved as text: "25:125,35:100"
-static std::vector<Pt> loadPoints() {
-	std::vector<Pt> out;
-	std::string s = Mod::get()->getSavedValue<std::string>("points", "25:125,35:100");
-
+static std::vector<std::string> splitStr(const std::string& s, char d) {
+	std::vector<std::string> out;
 	size_t i = 0;
-	while (i <= s.size()) {
-		size_t j = s.find(',', i);
-		if (j == std::string::npos) j = s.size();
-
-		std::string item = s.substr(i, j - i);
-		size_t c = item.find(':');
-		if (c != std::string::npos) {
-			float a = std::strtof(item.substr(0, c).c_str(), nullptr);
-			float b = std::strtof(item.substr(c + 1).c_str(), nullptr);
-			out.push_back(Pt{ a, b });
+	while (true) {
+		size_t j = s.find(d, i);
+		if (j == std::string::npos) {
+			out.push_back(s.substr(i));
+			break;
 		}
+		out.push_back(s.substr(i, j - i));
 		i = j + 1;
 	}
+	return out;
+}
 
-	std::sort(out.begin(), out.end(), [](const Pt& x, const Pt& y) {
-		return x.pct < y.pct;
+// rows are saved as text: "25:125:100:100:100:100,35:100:100:100:100:100"
+static std::vector<Pt> parsePoints(const std::string& s) {
+	std::vector<Pt> out;
+	for (auto& row : splitStr(s, ',')) {
+		auto f = splitStr(row, ':');
+		if (f.size() < 2 || f[0].empty()) continue;
+
+		float v[6] = { 0.f, 100.f, 100.f, 100.f, 100.f, 100.f };
+		for (size_t i = 0; i < 6 && i < f.size(); i++) {
+			if (!f[i].empty()) v[i] = std::strtof(f[i].c_str(), nullptr);
+		}
+		out.push_back(Pt{ v[0], v[1], v[2], v[3], v[4], v[5] });
+	}
+
+	std::sort(out.begin(), out.end(), [](const Pt& a, const Pt& b) {
+		return a.pct < b.pct;
 	});
 	return out;
 }
 
-// speed factor for the current level percent (1.0 = no effect)
-static float currentFactor() {
+static void loadConfig() {
 	auto mod = Mod::get();
-	if (!mod->getSettingValue<bool>("ssb-enabled")) return 1.f;
+	g_enabled = mod->getSavedValue<bool>("enabled", true);
+	g_methodSpeed = mod->getSavedValue<bool>("method-speed", false);
+	g_smooth = mod->getSavedValue<bool>("smooth", false);
+	g_points = parsePoints(mod->getSavedValue<std::string>(
+		"points", "25:125:100:100:100:100,35:100:100:100:100:100"
+	));
+	g_reload = false;
+}
+
+// the values for the current level percent
+static Cur computeNow() {
+	Cur c;
+	if (g_reload) loadConfig();
+	if (!g_enabled) return c;
 
 	auto pl = PlayLayer::get();
-	if (!pl) return 1.f;
-
-	if (g_reload) {
-		g_points = loadPoints();
-		g_reload = false;
-	}
-	if (g_points.empty()) return 1.f;
+	if (!pl || g_points.empty()) return c;
 
 	float pct = pl->getCurrentPercent();
 
@@ -66,100 +103,165 @@ static float currentFactor() {
 		if (g_points[i].pct <= pct) idx = i;
 		else break;
 	}
-	if (idx < 0) return 1.f;
+	if (idx < 0) return c;
 
-	float v = g_points[idx].speed;
+	Pt p = g_points[idx];
 
-	if (mod->getSettingValue<bool>("ssb-smooth") &&
-		idx + 1 < static_cast<int>(g_points.size())) {
-		auto& a = g_points[idx];
-		auto& b = g_points[idx + 1];
-		float span = b.pct - a.pct;
+	if (g_smooth && idx + 1 < static_cast<int>(g_points.size())) {
+		const Pt& n = g_points[idx + 1];
+		float span = n.pct - p.pct;
 		if (span > 0.001f) {
-			float t = (pct - a.pct) / span;
-			v = a.speed + (b.speed - a.speed) * t;
+			float t = (pct - p.pct) / span;
+			p.speed += (n.speed - p.speed) * t;
+			p.jump  += (n.jump  - p.jump)  * t;
+			p.grav  += (n.grav  - p.grav)  * t;
+			p.anim  += (n.anim  - p.anim)  * t;
+			p.part  += (n.part  - p.part)  * t;
 		}
 	}
-	return v / 100.f;
+
+	c.speed = p.speed / 100.f;
+	c.jump  = p.jump  / 100.f;
+	c.grav  = p.grav  / 100.f;
+	c.anim  = p.anim  / 100.f;
+	c.part  = p.part  / 100.f;
+	return c;
 }
 
-// the table window
-class PointsPopup : public Popup {
+// the settings window with the table
+class SsbPopup : public Popup {
 protected:
-	std::vector<TextInput*> m_pct;
-	std::vector<TextInput*> m_spd;
+	std::vector<std::vector<TextInput*>> m_cells;
+	ButtonSprite* m_methodSpr = nullptr;
 
 	bool init() {
-		if (!Popup::init(340.f, 250.f)) return false;
+		if (!Popup::init(420.f, 270.f)) return false;
 
-		this->setTitle("Fake SSB points");
+		this->setTitle("Fake SSB");
 
-		auto sz = m_mainLayer->getContentSize();
-		CCPoint c(sz.width * 0.5f, sz.height * 0.5f);
+		if (g_reload) loadConfig();
 
-		auto h1 = CCLabelBMFont::create("Level %", "goldFont.fnt");
-		h1->setScale(0.5f);
-		h1->setPosition({ c.x - 70.f, c.y + 88.f });
-		m_mainLayer->addChild(h1);
+		// ---- switches ----
+		auto en = CCMenuItemToggler::createWithStandardSprites(
+			this, menu_selector(SsbPopup::onEnable), 0.6f
+		);
+		en->toggle(g_enabled);
+		m_buttonMenu->addChildAtPosition(en, Anchor::Center, ccp(-175.f, 88.f));
 
-		auto h2 = CCLabelBMFont::create("Speed %", "goldFont.fnt");
-		h2->setScale(0.5f);
-		h2->setPosition({ c.x + 70.f, c.y + 88.f });
-		m_mainLayer->addChild(h2);
+		auto enLabel = CCLabelBMFont::create("Enable", "bigFont.fnt");
+		enLabel->setScale(0.4f);
+		enLabel->setAnchorPoint({ 0.f, 0.5f });
+		m_mainLayer->addChildAtPosition(enLabel, Anchor::Center, ccp(-158.f, 88.f));
 
-		auto pts = loadPoints();
+		auto sm = CCMenuItemToggler::createWithStandardSprites(
+			this, menu_selector(SsbPopup::onSmooth), 0.6f
+		);
+		sm->toggle(g_smooth);
+		m_buttonMenu->addChildAtPosition(sm, Anchor::Center, ccp(-70.f, 88.f));
 
-		for (int i = 0; i < 7; i++) {
-			float y = c.y + 62.f - 22.f * static_cast<float>(i);
+		auto smLabel = CCLabelBMFont::create("Smooth", "bigFont.fnt");
+		smLabel->setScale(0.4f);
+		smLabel->setAnchorPoint({ 0.f, 0.5f });
+		m_mainLayer->addChildAtPosition(smLabel, Anchor::Center, ccp(-53.f, 88.f));
 
-			auto a = TextInput::create(90.f, "%", "bigFont.fnt");
-			a->setFilter("0123456789.");
-			a->setScale(0.7f);
-			a->setPosition({ c.x - 70.f, y });
-			m_mainLayer->addChild(a);
+		m_methodSpr = ButtonSprite::create(g_methodSpeed ? "Speed" : "Shape");
+		m_methodSpr->setScale(0.6f);
+		auto methodBtn = CCMenuItemSpriteExtra::create(
+			m_methodSpr, this, menu_selector(SsbPopup::onMethod)
+		);
+		m_buttonMenu->addChildAtPosition(methodBtn, Anchor::Center, ccp(120.f, 88.f));
 
-			auto b = TextInput::create(90.f, "speed", "bigFont.fnt");
-			b->setFilter("0123456789.");
-			b->setScale(0.7f);
-			b->setPosition({ c.x + 70.f, y });
-			m_mainLayer->addChild(b);
+		// ---- table ----
+		const char* heads[6] = { "Level%", "Speed%", "Jump%", "Grav%", "Anim%", "Part%" };
+		const float xs[6] = { -150.f, -90.f, -30.f, 30.f, 90.f, 150.f };
 
-			if (i < static_cast<int>(pts.size())) {
-				a->setString(fmt::format("{:g}", pts[i].pct));
-				b->setString(fmt::format("{:g}", pts[i].speed));
+		for (int c = 0; c < 6; c++) {
+			auto h = CCLabelBMFont::create(heads[c], "goldFont.fnt");
+			h->setScale(0.4f);
+			m_mainLayer->addChildAtPosition(h, Anchor::Center, ccp(xs[c], 62.f));
+		}
+
+		auto pts = parsePoints(Mod::get()->getSavedValue<std::string>(
+			"points", "25:125:100:100:100:100,35:100:100:100:100:100"
+		));
+
+		for (int r = 0; r < 7; r++) {
+			std::vector<TextInput*> row;
+			float y = 38.f - 21.f * static_cast<float>(r);
+
+			for (int c = 0; c < 6; c++) {
+				auto in = TextInput::create(50.f, c == 0 ? "%" : "100", "bigFont.fnt");
+				in->setFilter("0123456789.");
+				in->setScale(0.6f);
+				m_mainLayer->addChildAtPosition(in, Anchor::Center, ccp(xs[c], y));
+
+				if (r < static_cast<int>(pts.size())) {
+					float v = pts[r].pct;
+					if (c == 1) v = pts[r].speed;
+					if (c == 2) v = pts[r].jump;
+					if (c == 3) v = pts[r].grav;
+					if (c == 4) v = pts[r].anim;
+					if (c == 5) v = pts[r].part;
+					in->setString(fmt::format("{:g}", v));
+				}
+				row.push_back(in);
 			}
-
-			m_pct.push_back(a);
-			m_spd.push_back(b);
+			m_cells.push_back(row);
 		}
 
 		auto hint = CCLabelBMFont::create(
-			"Speed applies from this % until the next point. 100 = normal.",
+			"Empty = 100. A row works from its Level% until the next row.",
 			"bigFont.fnt"
 		);
-		hint->setScale(0.3f);
-		hint->setPosition({ c.x, c.y - 102.f });
-		m_mainLayer->addChild(hint);
+		hint->setScale(0.27f);
+		m_mainLayer->addChildAtPosition(hint, Anchor::Center, ccp(0.f, -108.f));
+
+		auto hint2 = CCLabelBMFont::create(
+			"Speed = SSB, Jump = cube jump, Grav = gravity, Anim/Part = animation/particle speed.",
+			"bigFont.fnt"
+		);
+		hint2->setScale(0.27f);
+		m_mainLayer->addChildAtPosition(hint2, Anchor::Center, ccp(0.f, -120.f));
 
 		return true;
 	}
 
+	void onEnable(CCObject* sender) {
+		bool on = !static_cast<CCMenuItemToggler*>(sender)->isToggled();
+		Mod::get()->setSavedValue<bool>("enabled", on);
+		g_reload = true;
+	}
+
+	void onSmooth(CCObject* sender) {
+		bool on = !static_cast<CCMenuItemToggler*>(sender)->isToggled();
+		Mod::get()->setSavedValue<bool>("smooth", on);
+		g_reload = true;
+	}
+
+	void onMethod(CCObject*) {
+		bool speed = !Mod::get()->getSavedValue<bool>("method-speed", false);
+		Mod::get()->setSavedValue<bool>("method-speed", speed);
+		m_methodSpr->setString(speed ? "Speed" : "Shape");
+		g_reload = true;
+	}
+
 	void saveFromInputs() {
 		std::string out;
-		for (size_t i = 0; i < m_pct.size(); i++) {
-			std::string a = m_pct[i]->getString();
-			std::string b = m_spd[i]->getString();
-			if (a.empty() || b.empty()) continue;
+		for (auto& row : m_cells) {
+			if (row[0]->getString().empty()) continue;
 			if (!out.empty()) out += ",";
-			out += a + ":" + b;
+			for (size_t c = 0; c < row.size(); c++) {
+				if (c > 0) out += ":";
+				out += row[c]->getString();
+			}
 		}
 		Mod::get()->setSavedValue<std::string>("points", out);
 		g_reload = true;
 	}
 
 public:
-	static PointsPopup* create() {
-		auto ret = new PointsPopup();
+	static SsbPopup* create() {
+		auto ret = new SsbPopup();
 		if (ret->init()) {
 			ret->autorelease();
 			return ret;
@@ -169,7 +271,7 @@ public:
 	}
 
 	// the table is saved when the window is closed
-	~PointsPopup() {
+	~SsbPopup() {
 		this->saveFromInputs();
 	}
 };
@@ -177,31 +279,53 @@ public:
 class $modify(SsbPlayer, PlayerObject) {
 public:
 	void update(float dt) {
-		// do not read the settings on every single step
+		// do not recompute on every single step
 		static int tick = 0;
-		static float cached = 1.f;
-		if ((tick++ % 4) == 0) cached = currentFactor();
-		float f = cached;
+		if ((tick++ % 4) == 0) {
+			g_now = computeNow();
+			g_animFactor = g_now.anim;
+			g_partFactor = g_now.part;
+		}
 
-		if (f == 1.f) {
+		float speed = g_now.speed;
+		float grav = g_now.grav;
+
+		if (speed == 1.f && grav == 1.f) {
 			PlayerObject::update(dt);
 			return;
 		}
 
-		// Speed: the whole player just runs faster or slower
-		if (Mod::get()->getSettingValue<std::string>("ssb-method") == "Speed") {
-			PlayerObject::update(dt * f);
-			return;
+		// gravity: only for the duration of this step
+		float savedGrav = m_gravityMod;
+		if (grav != 1.f) m_gravityMod = savedGrav * grav;
+
+		if (speed == 1.f) {
+			PlayerObject::update(dt);
+		} else if (g_methodSpeed) {
+			// Speed: the whole player runs faster or slower
+			PlayerObject::update(dt * speed);
+		} else {
+			// Shape: only the forward movement is stretched or squeezed
+			float oldX = this->getPositionX();
+			PlayerObject::update(dt);
+
+			float dx = this->getPositionX() - oldX;
+			if (dx > 0.f && dx <= 50.f) {
+				this->setPosition(CCPoint(oldX + dx * speed, this->getPositionY()));
+			}
 		}
 
-		// Shape: only the forward movement is stretched or squeezed
-		float oldX = this->getPositionX();
-		PlayerObject::update(dt);
+		m_gravityMod = savedGrav;
+	}
 
-		float dx = this->getPositionX() - oldX;
-		if (dx <= 0.f || dx > 50.f) return; // ignore teleports and respawns
-
-		this->setPosition(CCPoint(oldX + dx * f, this->getPositionY()));
+	// jump height (cube only, jumps from the ground)
+	void setYVelocity(double velocity, int type) {
+		if (g_now.jump != 1.f && m_isOnGround &&
+			!m_isShip && !m_isBird && !m_isBall && !m_isDart &&
+			!m_isRobot && !m_isSpider && !m_isSwing) {
+			velocity *= g_now.jump;
+		}
+		PlayerObject::setYVelocity(velocity, type);
 	}
 };
 
@@ -209,9 +333,13 @@ class $modify(SsbPause, PauseLayer) {
 	void customSetup() {
 		PauseLayer::customSetup();
 
+		// animations must run normally in the pause menu
+		g_animFactor = 1.f;
+		g_partFactor = 1.f;
+
 		auto win = CCDirector::get()->getWinSize();
 
-		// the icon (copy of logo.png in resources); text button if it is missing
+		// the logo (copy of logo.png in resources); text button if it is missing
 		CCNode* icon = CCSprite::create("ssb.png"_spr);
 		if (!icon) icon = ButtonSprite::create("SSB");
 
@@ -250,7 +378,6 @@ class $modify(SsbPause, PauseLayer) {
 		btn->setID("ssb-button"_spr);
 
 		if (rightMenu) {
-			// remember where the other buttons are
 			float x = 0.f;
 			float minY = 0.f;
 			float maxY = 0.f;
@@ -274,10 +401,8 @@ class $modify(SsbPause, PauseLayer) {
 			rightMenu->addChild(btn);
 
 			if (rightMenu->getLayout()) {
-				// the menu arranges its buttons by itself
 				rightMenu->updateLayout();
 			} else if (any) {
-				// no layout: put it under the last button, or above if there is no room
 				float gap = size + 6.f;
 				CCPoint below = rightMenu->convertToWorldSpace(CCPoint(x, minY - gap));
 				if (below.y > size * 0.6f) {
@@ -287,7 +412,6 @@ class $modify(SsbPause, PauseLayer) {
 				}
 			}
 		} else {
-			// right menu not found: own menu near the top right
 			auto menu = CCMenu::create();
 			menu->addChild(btn);
 			menu->setPosition({ win.width - 110.f, win.height - 40.f });
@@ -296,6 +420,6 @@ class $modify(SsbPause, PauseLayer) {
 	}
 
 	void onSsb(CCObject*) {
-		if (auto p = PointsPopup::create()) p->show();
+		if (auto p = SsbPopup::create()) p->show();
 	}
 };
