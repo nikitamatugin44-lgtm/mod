@@ -1,17 +1,19 @@
 {
-	"geode": "5.11.1",
-	"gd": {
-		"win": "2.2081",
-		"android": "2.2081",
-		"mac": "2.2081",
-		"ios": "2.2081"
-	},
-	"version": "v1.2.0",
-	"id": "fullydraco.fakessb",
-	"name": "Fake SSB",
-	"developer": "fullydraco",
-	"description": "Artificial scroll speed bug, plus physics and animation speed at chosen level percents. Everything is set from the pause menu.",
-	"resources": {
-		"sprites": ["resources/*.png"]
-	}
+    "geode": "v5.11.1",
+    "gd": {
+        "win": "2.2081",
+        "mac": "2.2081",
+        "android": "2.2081",
+        "ios": "2.2081"
+    },
+    "id": "fullydraco.physicsdebugger",
+    "name": "Physics Debugger",
+    "version": "v1.0.0",
+    "developer": "fullydraco",
+    "description": "Displays live game, player and update diagnostics during gameplay.",
+    "tags": [
+        "developer",
+        "utility",
+        "offline"
+    ]
 }
